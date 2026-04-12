@@ -1,0 +1,113 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Assignment {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @default("")
+  subject     String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  criteria    GradingCriteria[]
+  backgrounds Background[]
+  submissions StudentWork[]
+}
+
+model GradingCriteria {
+  id           String   @id @default(cuid())
+  assignmentId String
+  criterion    String
+  description  String   @default("")
+  weight       Float    @default(1.0)
+  maxScore     Float    @default(100.0)
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  scores     CriteriaScore[]
+
+  @@map("grading_criteria")
+}
+
+model Background {
+  id           String   @id @default(cuid())
+  assignmentId String
+  content      String
+  source       String   @default("")
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@map("background")
+}
+
+model StudentWork {
+  id           String   @id @default(cuid())
+  assignmentId String
+  studentName  String
+  studentId    String   @default("")
+  content      String   @default("")
+  filePath     String   @default("")
+  fileType     String   @default("text")
+  status       String   @default("submitted")
+  submittedAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignment Assignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  result     GradingResult?
+  scores     CriteriaScore[]
+
+  @@map("student_work")
+}
+
+model GradingResult {
+  id              String   @id @default(cuid())
+  studentWorkId   String   @unique
+  totalScore      Float    @default(0)
+  maxScore        Float    @default(100)
+  evaluation      String   @default("")
+  modifications   String   @default("")
+  feedback        String   @default("")
+  strengths       String   @default("")
+  weaknesses      String   @default("")
+  suggestions     String   @default("")
+  gradedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  studentWork StudentWork @relation(fields: [studentWorkId], references: [id], onDelete: Cascade)
+  scores      CriteriaScore[]
+
+  @@map("grading_result")
+}
+
+model CriteriaScore {
+  id              String   @id @default(cuid())
+  criteriaId      String
+  studentWorkId   String
+  resultId        String?
+  score           Float    @default(0)
+  comment         String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  criteria     GradingCriteria @relation(fields: [criteriaId], references: [id], onDelete: Cascade)
+  studentWork  StudentWork     @relation(fields: [studentWorkId], references: [id], onDelete: Cascade)
+  result       GradingResult?  @relation(fields: [resultId], references: [id], onDelete: SetNull)
+
+  @@map("criteria_score")
+}

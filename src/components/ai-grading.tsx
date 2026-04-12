@@ -1,0 +1,471 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Progress } from '@/components/ui/progress'
+import { Separator } from '@/components/ui/separator'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { PenTool, Loader2, CheckCircle2, AlertCircle, Eye, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
+import { useAppStore } from '@/lib/store'
+import { useToast } from '@/hooks/use-toast'
+
+interface Assignment {
+  id: string
+  title: string
+  subject: string
+}
+
+interface CriteriaScore {
+  id: string
+  criteriaId: string
+  score: number
+  comment: string
+  criteria?: { criterion: string; maxScore: number }
+}
+
+interface GradingResult {
+  id: string
+  totalScore: number
+  maxScore: number
+  evaluation: string
+  modifications: string
+  feedback: string
+  strengths: string
+  weaknesses: string
+  suggestions: string
+  gradedAt: string
+  scores: CriteriaScore[]
+}
+
+interface Submission {
+  id: string
+  studentName: string
+  studentId: string
+  content: string
+  status: string
+  submittedAt: string
+  result?: GradingResult | null
+}
+
+export function AIGrading() {
+  const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [selectedId, setSelectedId] = useState<string>('')
+  const [submissions, setSubmissions] = useState<Submission[]>([])
+  const [loading, setLoading] = useState(true)
+  const [gradingIds, setGradingIds] = useState<Set<string>>(new Set())
+  const [batchGrading, setBatchGrading] = useState(false)
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 })
+  const [viewingResult, setViewingResult] = useState<GradingResult | null>(null)
+  const [viewingStudent, setViewingStudent] = useState<string>('')
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const { selectedAssignmentId, setSelectedAssignmentId } = useAppStore()
+  const { toast } = useToast()
+
+  const fetchAssignments = useCallback(async () => {
+    try {
+      const res = await fetch('/api/assignments')
+      const data = await res.json()
+      setAssignments(data)
+      if (selectedAssignmentId && !selectedId) {
+        setSelectedId(selectedAssignmentId)
+      } else if (data.length > 0 && !selectedId) {
+        setSelectedId(data[0].id)
+      }
+    } catch {
+      toast({ title: '加载失败', variant: 'destructive' })
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedAssignmentId, selectedId, toast])
+
+  const fetchSubmissions = useCallback(async () => {
+    if (!selectedId) return
+    try {
+      const res = await fetch(`/api/assignments/${selectedId}/submissions`)
+      const data = await res.json()
+      setSubmissions(data)
+    } catch {
+      toast({ title: '加载失败', variant: 'destructive' })
+    }
+  }, [selectedId, toast])
+
+  useEffect(() => { fetchAssignments() }, [fetchAssignments])
+  useEffect(() => { if (selectedId) fetchSubmissions() }, [selectedId, fetchSubmissions])
+
+  const handleGradeSingle = async (submissionId: string, studentName: string) => {
+    setGradingIds(prev => new Set(prev).add(submissionId))
+    try {
+      const res = await fetch(`/api/grade/${submissionId}`, { method: 'POST' })
+      if (res.ok) {
+        const result = await res.json()
+        toast({ title: '批改完成', description: `${studentName} 的作业已批改，得分：${result.totalScore}` })
+        fetchSubmissions()
+      } else {
+        const err = await res.json()
+        toast({ title: '批改失败', description: err.error, variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: '批改失败', variant: 'destructive' })
+    } finally {
+      setGradingIds(prev => {
+        const next = new Set(prev)
+        next.delete(submissionId)
+        return next
+      })
+    }
+  }
+
+  const handleBatchGrade = async () => {
+    if (!selectedId) return
+    const ungraded = submissions.filter(s => s.status === 'submitted')
+    if (ungraded.length === 0) {
+      toast({ title: '没有待批改的作业' })
+      return
+    }
+
+    setBatchGrading(true)
+    setBatchProgress({ current: 0, total: ungraded.length })
+
+    let successCount = 0
+    for (let i = 0; i < ungraded.length; i++) {
+      const s = ungraded[i]
+      setGradingIds(prev => new Set(prev).add(s.id))
+
+      try {
+        const res = await fetch(`/api/grade/${s.id}`, { method: 'POST' })
+        if (res.ok) successCount++
+      } catch {
+        // continue with next
+      }
+
+      setGradingIds(prev => {
+        const next = new Set(prev)
+        next.delete(s.id)
+        return next
+      })
+      setBatchProgress({ current: i + 1, total: ungraded.length })
+    }
+
+    setBatchGrading(false)
+    fetchSubmissions()
+    toast({ title: '批量批改完成', description: `成功批改 ${successCount}/${ungraded.length} 份作业` })
+  }
+
+  const handleViewResult = (result: GradingResult, studentName: string) => {
+    setViewingResult(result)
+    setViewingStudent(studentName)
+  }
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const getScoreColor = (score: number, max: number) => {
+    const ratio = score / max
+    if (ratio >= 0.9) return 'text-emerald-600'
+    if (ratio >= 0.8) return 'text-green-600'
+    if (ratio >= 0.7) return 'text-yellow-600'
+    if (ratio >= 0.6) return 'text-orange-600'
+    return 'text-red-600'
+  }
+
+  const getScoreBg = (score: number, max: number) => {
+    const ratio = score / max
+    if (ratio >= 0.9) return 'bg-emerald-50 border-emerald-200'
+    if (ratio >= 0.8) return 'bg-green-50 border-green-200'
+    if (ratio >= 0.7) return 'bg-yellow-50 border-yellow-200'
+    if (ratio >= 0.6) return 'bg-orange-50 border-orange-200'
+    return 'bg-red-50 border-red-200'
+  }
+
+  if (loading) {
+    return <div className="animate-pulse space-y-4"><div className="h-10 bg-gray-200 rounded" /><div className="h-40 bg-gray-200 rounded" /></div>
+  }
+
+  const ungradedCount = submissions.filter(s => s.status === 'submitted').length
+  const gradedCount = submissions.filter(s => s.status === 'graded').length
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">智能批改</h2>
+          <p className="text-sm text-gray-500">AI驱动的作业评价与反馈</p>
+        </div>
+      </div>
+
+      {/* Assignment selector + batch grade */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center gap-4 flex-wrap">
+            <Select value={selectedId} onValueChange={(id) => { setSelectedId(id); setSelectedAssignmentId(id) }}>
+              <SelectTrigger className="w-72">
+                <SelectValue placeholder="请选择作业" />
+              </SelectTrigger>
+              <SelectContent>
+                {assignments.map(a => (
+                  <SelectItem key={a.id} value={a.id}>{a.title}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedId && (
+              <div className="flex items-center gap-3 ml-auto">
+                <div className="text-sm text-gray-500">
+                  <span className="text-emerald-600 font-medium">{gradedCount}</span> 已批改 /
+                  <span className="text-amber-600 font-medium ml-1">{ungradedCount}</span> 待批改
+                </div>
+                <Button
+                  onClick={handleBatchGrade}
+                  disabled={batchGrading || ungradedCount === 0}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                  {batchGrading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      批改中 {batchProgress.current}/{batchProgress.total}
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      一键批改 {ungradedCount > 0 ? `(${ungradedCount}份)` : ''}
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+          {batchGrading && (
+            <div className="mt-4">
+              <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-2" />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Submissions List */}
+      {selectedId && (
+        <div className="space-y-3">
+          {submissions.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <PenTool className="w-12 h-12 text-gray-300 mb-4" />
+                <p className="text-gray-500">暂无提交的作业</p>
+                <p className="text-sm text-gray-400 mt-1">请先在"作业上传"中提交学生作业</p>
+              </CardContent>
+            </Card>
+          ) : (
+            submissions.map(s => (
+              <Card key={s.id} className={`transition-all ${s.status === 'graded' ? getScoreBg(s.result?.totalScore || 0, s.result?.maxScore || 100) : ''}`}>
+                <CardContent className="pt-4 pb-4">
+                  <div className="flex items-center gap-4">
+                    {/* Student info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{s.studentName}</span>
+                        {s.studentId && <span className="text-xs text-gray-400">{s.studentId}</span>}
+                        {s.status === 'graded' && s.result && (
+                          <Badge className={`${getScoreColor(s.result.totalScore, s.result.maxScore)} bg-white`}>
+                            {s.result.totalScore}/{s.result.maxScore}
+                          </Badge>
+                        )}
+                        {s.status === 'submitted' && <Badge variant="secondary">待批改</Badge>}
+                        {s.status === 'grading' && <Badge variant="outline" className="text-amber-600">批改中</Badge>}
+                      </div>
+                      {/* Show content preview */}
+                      <p className="text-sm text-gray-500 mt-1 line-clamp-1">{s.content}</p>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {s.status === 'submitted' && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleGradeSingle(s.id, s.studentName)}
+                          disabled={gradingIds.has(s.id)}
+                          className="bg-emerald-600 hover:bg-emerald-700"
+                        >
+                          {gradingIds.has(s.id) ? (
+                            <><Loader2 className="w-3 h-3 mr-1 animate-spin" />批改中</>
+                          ) : (
+                            <><PenTool className="w-3 h-3 mr-1" />批改</>
+                          )}
+                        </Button>
+                      )}
+                      {s.status === 'graded' && s.result && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => toggleExpand(s.id)}
+                          >
+                            {expandedIds.has(s.id) ? <ChevronUp className="w-3 h-3 mr-1" /> : <ChevronDown className="w-3 h-3 mr-1" />}
+                            {expandedIds.has(s.id) ? '收起' : '展开'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleViewResult(s.result!, s.studentName)}
+                          >
+                            <Eye className="w-3 h-3 mr-1" />
+                            详情
+                          </Button>
+                        </>
+                      )}
+                      {s.status === 'grading' && (
+                        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Expanded result preview */}
+                  {expandedIds.has(s.id) && s.result && (
+                    <div className="mt-4 pt-4 border-t">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {s.result.strengths && (
+                          <div>
+                            <p className="text-sm font-medium text-emerald-700 mb-1">✅ 优点</p>
+                            <p className="text-sm text-gray-600 whitespace-pre-wrap">{s.result.strengths}</p>
+                          </div>
+                        )}
+                        {s.result.weaknesses && (
+                          <div>
+                            <p className="text-sm font-medium text-red-700 mb-1">⚠️ 不足</p>
+                            <p className="text-sm text-gray-600 whitespace-pre-wrap">{s.result.weaknesses}</p>
+                          </div>
+                        )}
+                        {s.result.suggestions && (
+                          <div>
+                            <p className="text-sm font-medium text-blue-700 mb-1">💡 建议</p>
+                            <p className="text-sm text-gray-600 whitespace-pre-wrap">{s.result.suggestions}</p>
+                          </div>
+                        )}
+                        {s.result.feedback && (
+                          <div>
+                            <p className="text-sm font-medium text-purple-700 mb-1">💌 反馈</p>
+                            <p className="text-sm text-gray-600 whitespace-pre-wrap">{s.result.feedback}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Result Detail Dialog */}
+      <Dialog open={!!viewingResult} onOpenChange={() => setViewingResult(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {viewingResult && (
+                <>
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  {viewingStudent} 的批改结果
+                  <Badge className={`${getScoreColor(viewingResult.totalScore, viewingResult.maxScore)}`}>
+                    {viewingResult.totalScore}/{viewingResult.maxScore}
+                  </Badge>
+                </>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {viewingResult && (
+            <div className="space-y-4">
+              {/* Score overview */}
+              <div className="flex items-center justify-center p-6 rounded-lg bg-gradient-to-r from-emerald-50 to-teal-50">
+                <div className="text-center">
+                  <div className={`text-5xl font-bold ${getScoreColor(viewingResult.totalScore, viewingResult.maxScore)}`}>
+                    {viewingResult.totalScore}
+                  </div>
+                  <div className="text-sm text-gray-500 mt-1">满分 {viewingResult.maxScore}</div>
+                </div>
+              </div>
+
+              {/* Criteria scores */}
+              {viewingResult.scores.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2">各维度得分</h4>
+                  <div className="space-y-2">
+                    {viewingResult.scores.map(cs => (
+                      <div key={cs.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                        <span className="text-sm font-medium min-w-[100px]">{cs.criteria?.criterion || '维度'}</span>
+                        <div className="flex-1">
+                          <Progress
+                            value={(cs.score / (cs.criteria?.maxScore || 100)) * 100}
+                            className="h-2"
+                          />
+                        </div>
+                        <span className={`text-sm font-medium ${getScoreColor(cs.score, cs.criteria?.maxScore || 100)}`}>
+                          {cs.score}/{cs.criteria?.maxScore || 100}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <Separator />
+
+              {/* Detailed feedback */}
+              {viewingResult.evaluation && (
+                <div>
+                  <h4 className="font-medium text-emerald-700 mb-1">📋 总体评价</h4>
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-emerald-50 p-3 rounded-lg">{viewingResult.evaluation}</p>
+                </div>
+              )}
+              {viewingResult.strengths && (
+                <div>
+                  <h4 className="font-medium text-green-700 mb-1">✅ 优点</h4>
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-green-50 p-3 rounded-lg">{viewingResult.strengths}</p>
+                </div>
+              )}
+              {viewingResult.weaknesses && (
+                <div>
+                  <h4 className="font-medium text-orange-700 mb-1">⚠️ 不足之处</h4>
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-orange-50 p-3 rounded-lg">{viewingResult.weaknesses}</p>
+                </div>
+              )}
+              {viewingResult.modifications && (
+                <div>
+                  <h4 className="font-medium text-blue-700 mb-1">📝 修改建议</h4>
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-blue-50 p-3 rounded-lg">{viewingResult.modifications}</p>
+                </div>
+              )}
+              {viewingResult.feedback && (
+                <div>
+                  <h4 className="font-medium text-purple-700 mb-1">💌 反馈意见</h4>
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-purple-50 p-3 rounded-lg">{viewingResult.feedback}</p>
+                </div>
+              )}
+              {viewingResult.suggestions && (
+                <div>
+                  <h4 className="font-medium text-teal-700 mb-1">💡 改进建议</h4>
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-teal-50 p-3 rounded-lg">{viewingResult.suggestions}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {assignments.length === 0 && (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <AlertCircle className="w-12 h-12 text-gray-300 mb-4" />
+            <p className="text-gray-500">请先在"作业管理"中创建作业</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
