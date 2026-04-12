@@ -31,8 +31,8 @@ export async function POST(
     const { id } = await params
     const body = await request.json()
 
-    // Support single or batch submissions
-    const items: Array<{ studentName: string; studentId?: string; content: string }> = body.items || [body]
+    // Support single or batch submissions with dynamic fields
+    const items: Array<Record<string, string>> = body.items || [body]
 
     if (!items.length) {
       return NextResponse.json({ error: '没有提交内容' }, { status: 400 })
@@ -40,15 +40,35 @@ export async function POST(
 
     const results = []
     for (const item of items) {
-      if (!item.studentName?.trim() || !item.content?.trim()) continue
+      if (!item.studentName?.trim()) continue
+
+      // Separate known fields from extra fields
+      const studentName = item.studentName.trim()
+      const studentId = item.studentId?.trim() || ''
+      const content = item.content?.trim() || ''
+
+      // Collect extra custom fields into content prefix
+      const knownKeys = ['studentName', 'studentId', 'content']
+      const extraParts: string[] = []
+      for (const [key, value] of Object.entries(item)) {
+        if (!knownKeys.includes(key) && value?.trim()) {
+          extraParts.push(`${key}: ${value.trim()}`)
+        }
+      }
+
+      // Build final content: extra fields + original content
+      const finalContent = [extraParts.join('\n'), content].filter(Boolean).join('\n')
+
+      if (!finalContent) continue
 
       const submission = await db.studentWork.create({
         data: {
           assignmentId: id,
-          studentName: item.studentName.trim(),
-          studentId: item.studentId?.trim() || '',
-          content: item.content.trim(),
-          fileType: 'text',
+          studentName,
+          studentId,
+          content: finalContent,
+          filePath: item.filePath || '',
+          fileType: item.fileType || (content ? 'text' : 'file'),
           status: 'submitted',
         }
       })
