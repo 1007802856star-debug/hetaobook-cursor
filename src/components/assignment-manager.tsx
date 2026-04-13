@@ -47,6 +47,7 @@ interface Background {
 interface AssignmentDetail extends Assignment {
   criteria: Criteria[]
   backgrounds: Background[]
+  submissions?: { id: string }[]
 }
 
 export function AssignmentManager() {

@@ -220,7 +220,7 @@ export function WorkSubmission() {
     }
 
     // Build submission items from mapped data
-    const items = []
+    const items: Array<Record<string, string>> = []
     for (const row of excelPreview.rows) {
       const item: Record<string, string> = {}
       for (const header of excelPreview.headers) {

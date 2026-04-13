@@ -38,7 +38,7 @@ export async function POST(
       return NextResponse.json({ error: '没有提交内容' }, { status: 400 })
     }
 
-    const results = []
+    const results: Array<Record<string, unknown>> = []
     for (const item of items) {
       if (!item.studentName?.trim()) continue
 
@@ -72,7 +72,7 @@ export async function POST(
           status: 'submitted',
         }
       })
-      results.push(submission)
+      results.push(submission as Record<string, unknown>)
     }
 
     return NextResponse.json(results, { status: 201 })
