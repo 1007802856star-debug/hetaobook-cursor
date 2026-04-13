@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import ZAI from 'z-ai-web-dev-sdk'
 
 // Cache the model info to avoid repeated API calls
-let cachedModelInfo: { model: string; provider: string; verified: boolean } | null = null
+let cachedModelInfo: { model: string; provider: string; verified: boolean; displayName: string } | null = null
 
 export async function GET() {
   try {

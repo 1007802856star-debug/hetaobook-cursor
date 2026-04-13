@@ -85,7 +85,19 @@ export async function POST(
       return NextResponse.json({ error: '没有提交内容' }, { status: 400 })
     }
 
-    const results = []
+    const results: Array<{
+      id: string
+      assignmentId: string
+      studentName: string
+      studentId: string
+      content: string
+      filePath: string
+      fileType: string
+      status: string
+      submittedAt: Date
+      createdAt: Date
+      updatedAt: Date
+    }> = []
     for (const item of items) {
       if (!item.studentName?.trim()) continue
 

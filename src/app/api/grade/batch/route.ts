@@ -22,8 +22,8 @@ export async function POST(request: Request) {
     }
 
     // Grade each submission sequentially to avoid rate limits
-    const results = []
-    const errors = []
+    const results: Array<Record<string, unknown>> = []
+    const errors: Array<{ studentName: string; error: string }> = []
 
     for (const submission of submissions) {
       try {
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
           results.push(result)
         } else {
           const err = await res.json()
-          errors.push({ studentName: submission.studentName, error: err.error })
+          errors.push({ studentName: submission.studentName, error: String(err.error) })
         }
 
         // Small delay to avoid rate limiting
