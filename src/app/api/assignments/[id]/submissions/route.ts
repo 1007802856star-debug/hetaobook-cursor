@@ -125,6 +125,6 @@ export async function POST(
     return NextResponse.json(results, { status: 201 })
   } catch (error) {
     console.error('Failed to create submission:', error)
-    return NextResponse.json({ error: 'Failed to create submission' }, { status: 500 })
+    return NextResponse.json({ error: '提交失败，请重试' }, { status: 500 })
   }
 }
