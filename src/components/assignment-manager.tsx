@@ -9,10 +9,18 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Plus, Pencil, Trash2, BookOpen, ChevronRight, GripVertical, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, BookOpen, ChevronRight, GripVertical, X, ClipboardCheck, FileText, Lightbulb } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { useToast } from '@/hooks/use-toast'
+
+// Background category definitions
+const BG_CATEGORIES = {
+  grading_standard: { label: '评分标准', icon: ClipboardCheck, color: 'red', required: true, placeholder: '输入评分标准，如：各评分档位的具体要求、扣分规则等' },
+  reference_answer: { label: '参考答案', icon: FileText, color: 'blue', required: false, placeholder: '输入参考答案，如：标准答案、范例等' },
+  knowledge: { label: '相关知识点', icon: Lightbulb, color: 'purple', required: false, placeholder: '输入相关知识点，如：关键概念、公式、定理等' },
+} as const
+
+type BgCategory = keyof typeof BG_CATEGORIES
 
 interface Assignment {
   id: string
@@ -39,6 +47,7 @@ interface Criteria {
 
 interface Background {
   id: string
+  category: string
   content: string
   source: string
   order: number
@@ -58,7 +67,7 @@ export function AssignmentManager() {
   const [editMode, setEditMode] = useState(false)
   const [newAssignment, setNewAssignment] = useState({ title: '', description: '', subject: '' })
   const [newCriteria, setNewCriteria] = useState({ criterion: '', description: '', weight: 1, maxScore: 100 })
-  const [newBackground, setNewBackground] = useState({ content: '', source: '' })
+  const [newBackground, setNewBackground] = useState<{ category: BgCategory; content: string }>({ category: 'grading_standard', content: '' })
   const { setSelectedAssignmentId, bumpAssignmentVersion } = useAppStore()
   const { toast } = useToast()
 
@@ -194,7 +203,8 @@ export function AssignmentManager() {
 
   const handleAddBackground = async () => {
     if (!detail || !newBackground.content.trim()) {
-      toast({ title: '请输入背景知识内容', variant: 'destructive' })
+      const catLabel = BG_CATEGORIES[newBackground.category].label
+      toast({ title: `请输入${catLabel}内容`, variant: 'destructive' })
       return
     }
     try {
@@ -204,9 +214,9 @@ export function AssignmentManager() {
         body: JSON.stringify({ ...newBackground, order: detail.backgrounds.length }),
       })
       if (res.ok) {
-        setNewBackground({ content: '', source: '' })
+        setNewBackground(prev => ({ ...prev, content: '' }))
         fetchDetail(detail.id)
-        toast({ title: '背景知识已添加' })
+        toast({ title: `${BG_CATEGORIES[newBackground.category].label}已添加` })
       }
     } catch {
       toast({ title: '添加失败', variant: 'destructive' })
@@ -219,11 +229,32 @@ export function AssignmentManager() {
       const res = await fetch(`/api/backgrounds/${bgId}`, { method: 'DELETE' })
       if (res.ok) {
         fetchDetail(detail.id)
-        toast({ title: '背景知识已删除' })
+        toast({ title: '已删除' })
       }
     } catch {
       toast({ title: '删除失败', variant: 'destructive' })
     }
+  }
+
+  // Get backgrounds by category
+  const getBackgroundsByCategory = (category: BgCategory) => {
+    return detail?.backgrounds.filter(bg => bg.category === category) || []
+  }
+
+  // Category badge styles
+  const getCategoryBadge = (category: string) => {
+    const cat = BG_CATEGORIES[category as BgCategory]
+    if (!cat) return null
+    const colorMap: Record<string, string> = {
+      red: 'bg-red-50 text-red-700 border-red-200',
+      blue: 'bg-blue-50 text-blue-700 border-blue-200',
+      purple: 'bg-purple-50 text-purple-700 border-purple-200',
+    }
+    return (
+      <Badge variant="outline" className={`text-xs ${colorMap[cat.color]}`}>
+        {cat.label}
+      </Badge>
+    )
   }
 
   if (loading) {
@@ -243,6 +274,10 @@ export function AssignmentManager() {
 
   // Detail view
   if (detail) {
+    const gradingStandards = getBackgroundsByCategory('grading_standard')
+    const referenceAnswers = getBackgroundsByCategory('reference_answer')
+    const knowledgePoints = getBackgroundsByCategory('knowledge')
+
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-2">
@@ -273,8 +308,8 @@ export function AssignmentManager() {
                     <Textarea
                       value={detail.description}
                       onChange={e => setDetail({ ...detail, description: e.target.value })}
-                      placeholder="作业描述"
-                      rows={3}
+                      placeholder="题干内容"
+                      rows={4}
                     />
                     <div className="flex gap-2">
                       <Button size="sm" onClick={handleUpdate} className="bg-emerald-600 hover:bg-emerald-700">保存</Button>
@@ -286,8 +321,13 @@ export function AssignmentManager() {
                     <CardTitle className="text-xl text-emerald-900">{detail.title}</CardTitle>
                     <CardDescription className="mt-1">
                       {detail.subject && <Badge variant="secondary" className="mr-2">{detail.subject}</Badge>}
-                      {detail.description || '暂无描述'}
                     </CardDescription>
+                    {detail.description && (
+                      <div className="mt-3 p-3 bg-white/60 rounded-lg border border-emerald-100">
+                        <p className="text-sm font-medium text-emerald-800 mb-1">题干</p>
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{detail.description}</p>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -300,10 +340,12 @@ export function AssignmentManager() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-4 text-sm text-gray-600">
+            <div className="flex gap-4 text-sm text-gray-600 flex-wrap">
               <span>评分维度: {detail.criteria.length}</span>
               <span>满分: {detail.criteria.reduce((sum, c) => sum + c.maxScore, 0)}分</span>
-              <span>背景知识: {detail.backgrounds.length}</span>
+              <span>评分标准: {gradingStandards.length}</span>
+              <span>参考答案: {referenceAnswers.length}</span>
+              <span>知识点: {knowledgePoints.length}</span>
               <span>提交数: {detail.submissions?.length || 0}</span>
             </div>
           </CardContent>
@@ -385,56 +427,98 @@ export function AssignmentManager() {
             </CardContent>
           </Card>
 
-          {/* Background Knowledge */}
+          {/* Grading Basis - Three Categories */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <div className="w-6 h-6 rounded bg-blue-100 flex items-center justify-center">
-                  <span className="text-blue-700 text-xs font-bold">知</span>
+                  <span className="text-blue-700 text-xs font-bold">据</span>
                 </div>
-                背景知识
+                评分依据
               </CardTitle>
-              <CardDescription>提供批改所需的参考知识</CardDescription>
+              <CardDescription>评分标准（必填）+ 参考答案 + 相关知识点，AI批改时综合以上信息进行评分</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {detail.backgrounds.length > 0 && (
-                <div className="space-y-2">
-                  {detail.backgrounds.map(bg => (
-                    <div key={bg.id} className="flex items-start gap-2 p-3 bg-gray-50 rounded-lg border">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm whitespace-pre-wrap">{bg.content}</p>
-                        {bg.source && <p className="text-xs text-gray-400 mt-1">来源: {bg.source}</p>}
-                      </div>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-gray-400 hover:text-red-500" onClick={() => handleDeleteBackground(bg.id)}>
-                        <X className="w-3 h-3" />
-                      </Button>
+            <CardContent className="space-y-5">
+              {/* Display existing backgrounds by category */}
+              {(['grading_standard', 'reference_answer', 'knowledge'] as BgCategory[]).map(category => {
+                const catConfig = BG_CATEGORIES[category]
+                const items = getBackgroundsByCategory(category)
+                const IconComp = catConfig.icon
+                const colorMap: Record<string, { bg: string; border: string; icon: string; badge: string }> = {
+                  red: { bg: 'bg-red-50', border: 'border-red-100', icon: 'text-red-600', badge: 'bg-red-100 text-red-700' },
+                  blue: { bg: 'bg-blue-50', border: 'border-blue-100', icon: 'text-blue-600', badge: 'bg-blue-100 text-blue-700' },
+                  purple: { bg: 'bg-purple-50', border: 'border-purple-100', icon: 'text-purple-600', badge: 'bg-purple-100 text-purple-700' },
+                }
+                const colors = colorMap[catConfig.color]
+
+                return (
+                  <div key={category}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <IconComp className={`w-4 h-4 ${colors.icon}`} />
+                      <span className="text-sm font-medium text-gray-700">{catConfig.label}</span>
+                      {catConfig.required && <Badge variant="outline" className="text-xs border-red-200 text-red-600 bg-red-50">必填</Badge>}
+                      {items.length > 0 && <Badge variant="secondary" className="text-xs">{items.length}</Badge>}
                     </div>
-                  ))}
-                </div>
-              )}
+                    {items.length > 0 ? (
+                      <div className="space-y-2 mb-2">
+                        {items.map(bg => (
+                          <div key={bg.id} className={`flex items-start gap-2 p-3 ${colors.bg} rounded-lg border ${colors.border}`}>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm whitespace-pre-wrap">{bg.content}</p>
+                            </div>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-gray-400 hover:text-red-500 shrink-0" onClick={() => handleDeleteBackground(bg.id)}>
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 mb-2">{catConfig.required ? '请添加评分标准' : '暂无'}</p>
+                    )}
+                  </div>
+                )
+              })}
 
               <Separator />
 
+              {/* Add new background */}
               <div className="space-y-3">
-                <p className="text-sm font-medium text-gray-700">添加背景知识</p>
+                <p className="text-sm font-medium text-gray-700">添加评分依据</p>
+                {/* Category selector */}
+                <div className="flex gap-2">
+                  {(['grading_standard', 'reference_answer', 'knowledge'] as BgCategory[]).map(category => {
+                    const catConfig = BG_CATEGORIES[category]
+                    const IconComp = catConfig.icon
+                    const isActive = newBackground.category === category
+                    const activeColorMap: Record<string, string> = {
+                      grading_standard: isActive ? 'bg-red-600 hover:bg-red-700' : '',
+                      reference_answer: isActive ? 'bg-blue-600 hover:bg-blue-700' : '',
+                      knowledge: isActive ? 'bg-purple-600 hover:bg-purple-700' : '',
+                    }
+                    return (
+                      <Button
+                        key={category}
+                        size="sm"
+                        variant={isActive ? 'default' : 'outline'}
+                        className={activeColorMap[category]}
+                        onClick={() => setNewBackground(prev => ({ ...prev, category }))}
+                      >
+                        <IconComp className="w-3 h-3 mr-1" />
+                        {catConfig.label}
+                      </Button>
+                    )
+                  })}
+                </div>
                 <Textarea
-                  placeholder="输入背景知识内容，如参考答案、评分标准、知识点说明等"
+                  placeholder={BG_CATEGORIES[newBackground.category].placeholder}
                   value={newBackground.content}
-                  onChange={e => setNewBackground({ ...newBackground, content: e.target.value })}
+                  onChange={e => setNewBackground(prev => ({ ...prev, content: e.target.value }))}
                   rows={4}
                 />
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder="来源（选填）"
-                    value={newBackground.source}
-                    onChange={e => setNewBackground({ ...newBackground, source: e.target.value })}
-                    className="flex-1"
-                  />
-                  <Button size="sm" onClick={handleAddBackground} className="bg-emerald-600 hover:bg-emerald-700">
-                    <Plus className="w-3 h-3 mr-1" />
-                    添加
-                  </Button>
-                </div>
+                <Button size="sm" onClick={handleAddBackground} className="bg-emerald-600 hover:bg-emerald-700">
+                  <Plus className="w-3 h-3 mr-1" />
+                  添加{BG_CATEGORIES[newBackground.category].label}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -481,12 +565,12 @@ export function AssignmentManager() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>描述</Label>
+                <Label>题干 *</Label>
                 <Textarea
-                  placeholder="作业的详细说明"
+                  placeholder="输入作业的题目内容和要求"
                   value={newAssignment.description}
                   onChange={e => setNewAssignment({ ...newAssignment, description: e.target.value })}
-                  rows={3}
+                  rows={5}
                 />
               </div>
             </div>
@@ -529,10 +613,10 @@ export function AssignmentManager() {
                 {a.subject && <Badge variant="secondary" className="w-fit text-xs">{a.subject}</Badge>}
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-gray-500 line-clamp-2">{a.description || '暂无描述'}</p>
+                <p className="text-sm text-gray-500 line-clamp-2">{a.description || '暂无题干'}</p>
                 <div className="flex gap-3 mt-3 text-xs text-gray-400">
                   <span>{a._count?.criteria || 0} 评分维度</span>
-                  <span>{a._count?.backgrounds || 0} 背景知识</span>
+                  <span>{a._count?.backgrounds || 0} 评分依据</span>
                   <span>{a._count?.submissions || 0} 份提交</span>
                 </div>
               </CardContent>

@@ -8,15 +8,18 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { content, source, order } = body
+    const { content, category, source, order } = body
+
+    const validCategories = ['grading_standard', 'reference_answer', 'knowledge']
+    const updateData: Record<string, unknown> = {}
+    if (content !== undefined) updateData.content = content.trim()
+    if (category !== undefined && validCategories.includes(category)) updateData.category = category
+    if (source !== undefined) updateData.source = source.trim()
+    if (order !== undefined) updateData.order = order
 
     const background = await db.background.update({
       where: { id },
-      data: {
-        ...(content !== undefined && { content: content.trim() }),
-        ...(source !== undefined && { source: source.trim() }),
-        ...(order !== undefined && { order }),
-      }
+      data: updateData,
     })
 
     return NextResponse.json(background)

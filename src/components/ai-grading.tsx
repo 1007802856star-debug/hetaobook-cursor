@@ -94,6 +94,20 @@ interface Assignment {
   id: string
   title: string
   subject: string
+  _count?: {
+    criteria: number
+    backgrounds: number
+    submissions: number
+  }
+}
+
+interface AssignmentDetail {
+  id: string
+  title: string
+  subject: string
+  description: string
+  criteria: { id: string; criterion: string; maxScore: number }[]
+  backgrounds: { id: string; category: string; content: string }[]
 }
 
 interface CriteriaScore {
@@ -140,6 +154,7 @@ export function AIGrading() {
   const [viewingStudent, setViewingStudent] = useState<string>('')
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [aiModelInfo, setAiModelInfo] = useState<{ displayName: string; model: string; verified: boolean } | null>(null)
+  const [assignmentDetail, setAssignmentDetail] = useState<AssignmentDetail | null>(null)
   const { selectedAssignmentId, setSelectedAssignmentId, assignmentVersion } = useAppStore()
   const { toast } = useToast()
 
@@ -174,6 +189,18 @@ export function AIGrading() {
   useEffect(() => { fetchAssignments() }, [fetchAssignments])
   useEffect(() => { fetchAssignments() }, [assignmentVersion])
   useEffect(() => { if (selectedId) fetchSubmissions() }, [selectedId, fetchSubmissions])
+
+  // Fetch assignment detail to check for grading standards
+  useEffect(() => {
+    if (!selectedId) {
+      setAssignmentDetail(null)
+      return
+    }
+    fetch(`/api/assignments/${selectedId}`)
+      .then(res => res.json())
+      .then(data => setAssignmentDetail(data))
+      .catch(() => setAssignmentDetail(null))
+  }, [selectedId, assignmentVersion])
 
   // Fetch AI model info
   useEffect(() => {
@@ -285,6 +312,11 @@ export function AIGrading() {
   const ungradedCount = submissions.filter(s => s.status === 'submitted' || s.status === 'grading').length
   const gradedCount = submissions.filter(s => s.status === 'graded').length
 
+  // Check if the selected assignment has required grading standards
+  const hasGradingStandards = assignmentDetail?.backgrounds.some(b => b.category === 'grading_standard') ?? true
+  const hasCriteria = assignmentDetail ? assignmentDetail.criteria.length > 0 : true
+  const canGrade = hasGradingStandards && hasCriteria
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -340,6 +372,37 @@ export function AIGrading() {
         </CardContent>
       </Card>
 
+      {/* Missing grading standards warning */}
+      {selectedId && assignmentDetail && (
+        (() => {
+          const hasGradingStandards = assignmentDetail.backgrounds.some(b => b.category === 'grading_standard')
+          const hasCriteria = assignmentDetail.criteria.length > 0
+          const warnings: string[] = []
+          if (!hasGradingStandards) warnings.push('评分标准（必填）')
+          if (!hasCriteria) warnings.push('评分维度')
+          if (warnings.length > 0) {
+            return (
+              <Card className="border-amber-200 bg-amber-50">
+                <CardContent className="pt-4 pb-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-800">
+                        缺少评分依据，无法进行AI批改
+                      </p>
+                      <p className="text-sm text-amber-700 mt-1">
+                        请先在「作业管理」中为此作业添加：{warnings.join('、')}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          }
+          return null
+        })()
+      )}
+
       {/* Assignment selector + batch grade */}
       <Card>
         <CardContent className="pt-6">
@@ -362,7 +425,7 @@ export function AIGrading() {
                 </div>
                 <Button
                   onClick={handleBatchGrade}
-                  disabled={batchGrading || ungradedCount === 0}
+                  disabled={batchGrading || ungradedCount === 0 || !canGrade}
                   className="bg-emerald-600 hover:bg-emerald-700"
                 >
                   {batchGrading ? (
@@ -427,7 +490,7 @@ export function AIGrading() {
                         <Button
                           size="sm"
                           onClick={() => handleGradeSingle(s.id, s.studentName)}
-                          disabled={gradingIds.has(s.id) || batchGrading}
+                          disabled={gradingIds.has(s.id) || batchGrading || !canGrade}
                           className="bg-emerald-600 hover:bg-emerald-700"
                         >
                           {gradingIds.has(s.id) ? (
@@ -459,7 +522,7 @@ export function AIGrading() {
                             size="sm"
                             variant="ghost"
                             onClick={() => handleGradeSingle(s.id, s.studentName)}
-                            disabled={gradingIds.has(s.id) || batchGrading}
+                            disabled={gradingIds.has(s.id) || batchGrading || !canGrade}
                             title="重新批改"
                           >
                             <RotateCcw className="w-3 h-3" />

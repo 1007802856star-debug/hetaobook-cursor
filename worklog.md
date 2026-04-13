@@ -26,3 +26,24 @@ Stage Summary:
 - Improved AI response parsing robustness with fuzzy matching
 - Submissions API now auto-fixes stale statuses
 - Statistics properly display scores relative to total maxScore
+
+---
+Task ID: 2
+Agent: main
+Task: Complete assignment form restructuring - reinforce 题干/评分标准/参考答案/相关知识点 structure
+
+Work Log:
+- Verified existing code already has: 题干 label, three background categories (评分标准/参考答案/相关知识点), AI prompt with all categories
+- Added grading standard validation in AI grading API (returns 400 error if no grading_standards exist)
+- Changed "背景知识" card title to "评分依据" with clearer description
+- Updated assignment list card label from "背景知识" to "评分依据"
+- Added AssignmentDetail interface and fetch in AIGrading component
+- Added warning banner in AI grading when missing 评分标准 or 评分维度
+- Disabled batch/single grading buttons when canGrade is false
+- All changes pass ESLint and Prisma schema is in sync
+
+Stage Summary:
+- 评分标准 is now enforced as required - API rejects grading without it
+- UI clearly shows "评分依据" instead of "背景知识" with description explaining all three categories
+- AI grading component warns users when grading standards are missing and disables grading buttons
+- All previous functionality preserved

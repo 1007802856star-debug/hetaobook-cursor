@@ -116,8 +116,33 @@ export async function POST(
         ).join('\n')
       : '- 综合评价（满分: 100分）：根据作业整体质量评分'
 
-    const backgroundText = assignment.backgrounds.length > 0
-      ? assignment.backgrounds.map(b => b.content).join('\n')
+    // Separate backgrounds by category for structured AI prompt
+    const gradingStandards = assignment.backgrounds.filter(b => b.category === 'grading_standard')
+    const referenceAnswers = assignment.backgrounds.filter(b => b.category === 'reference_answer')
+    const knowledgePoints = assignment.backgrounds.filter(b => b.category === 'knowledge')
+
+    // Validate: grading standards are required
+    if (gradingStandards.length === 0) {
+      // Reset status back to submitted
+      await db.studentWork.update({
+        where: { id: submissionId },
+        data: { status: 'submitted' }
+      })
+      return NextResponse.json({ 
+        error: '缺少评分标准，请先在作业管理中添加评分标准后再进行批改' 
+      }, { status: 400 })
+    }
+
+    const gradingStandardText = gradingStandards.length > 0
+      ? gradingStandards.map(b => b.content).join('\n')
+      : '无'
+
+    const referenceAnswerText = referenceAnswers.length > 0
+      ? referenceAnswers.map(b => b.content).join('\n')
+      : '无'
+
+    const knowledgePointText = knowledgePoints.length > 0
+      ? knowledgePoints.map(b => b.content).join('\n')
       : '无'
 
     const criteriaNames = assignment.criteria.length > 0
@@ -127,22 +152,28 @@ export async function POST(
     const criteriaListStr = criteriaNames.map((name, i) => `${i + 1}. "${name}"`).join('\n')
 
     const userPrompt = `作业题目：${assignment.title}
-作业描述：${assignment.description || '无'}
+题干：${assignment.description || '无'}
 科目：${assignment.subject || '未指定'}
 
-批改要求（各维度满分之和为${totalMaxScore}分）：
+评分标准（必读，各维度满分之和为${totalMaxScore}分）：
+${gradingStandardText}
+
+批改维度要求：
 ${criteriaText}
 
-背景知识：
-${backgroundText}
+参考答案：
+${referenceAnswerText}
+
+相关知识点：
+${knowledgePointText}
 
 学生姓名：${submission.studentName}
 学号：${submission.studentId || '未提供'}
 
-作业内容：
+学生作业内容：
 ${submission.content}
 
-请严格按照批改要求进行评价，返回JSON格式结果。
+请综合以上题干、评分标准、参考答案和相关知识点，严格按照批改维度要求进行评价，返回JSON格式结果。
 评分维度名称必须严格使用以下名称：
 ${criteriaListStr}`
 
@@ -152,34 +183,41 @@ ${criteriaListStr}`
         messages: [
           {
             role: 'system',
-            content: `你是一位经验丰富的专业教师，擅长对学生作业进行详细、公正的批改和评价。你需要根据给定的批改要求和背景知识，对学生提交的作业进行全面评价。
+            content: `你是一位经验丰富的专业教师，擅长对学生作业进行详细、公正的批改和评价。
+
+你需要综合以下信息对学生作业进行批改：
+1. 题干：作业的原始题目和要求
+2. 评分标准：具体的评分规则和扣分标准，这是评分的核心依据
+3. 参考答案：标准答案或范例，用于对比学生答案的正确性
+4. 相关知识点：与题目相关的关键概念、公式、定理等
 
 请返回纯JSON格式（不要包含markdown代码块标记\`\`\`），包含以下字段：
 {
-  "evaluation": "总体评价（100-200字）",
-  "modifications": "具体修改建议，详细指出需要修改的地方",
+  "evaluation": "总体评价（100-200字），结合作业内容、评分标准和参考答案综合评价",
+  "modifications": "具体修改建议，详细指出需要修改的地方，参考参考答案说明正确做法",
   "feedback": "反馈意见，鼓励性的建设性反馈",
   "strengths": "优点，指出做得好的地方",
-  "weaknesses": "不足之处，指出需要改进的问题",
-  "suggestions": "改进建议，提供具体的改进方向",
+  "weaknesses": "不足之处，指出与评分标准和参考答案的差距",
+  "suggestions": "改进建议，结合相关知识点提供具体的改进方向",
   "criteriaScores": [
     {
-      "criterionName": "维度名称（必须与批改要求中的名称完全一致）",
+      "criterionName": "维度名称（必须与批改维度要求中的名称完全一致）",
       "score": 数字（该维度得分，不超过该维度满分），
-      "comment": "该维度的评语（50-100字）"
+      "comment": "该维度的评语（50-100字），结合评分标准说明得分原因"
     }
   ]
 }
 
 重要评分规则：
-1. 每个维度的score不得超过该维度的满分
-2. totalScore不需要返回，系统会自动将各维度得分加总计算
-3. 评价要具体、有针对性，避免空泛的描述
-4. 修改建议要指出具体的问题位置和修改方向
-5. 反馈要有鼓励性，同时指出不足
-6. 评语要结合作业内容给出具体例子
-7. 必须返回所有维度的评分，不要遗漏
-8. criterionName必须与批改要求中的维度名称完全一致，包括标点符号`
+1. 评分必须严格依据评分标准，对照参考答案判断正确性
+2. 每个维度的score不得超过该维度的满分
+3. totalScore不需要返回，系统会自动将各维度得分加总计算
+4. 评价要具体、有针对性，避免空泛的描述
+5. 修改建议要指出具体的问题位置和修改方向，参考参考答案给出正确做法
+6. 反馈要有鼓励性，同时指出不足
+7. 评语要结合作业内容给出具体例子，引用相关知识点
+8. 必须返回所有维度的评分，不要遗漏
+9. criterionName必须与批改维度要求中的名称完全一致，包括标点符号`
           },
           {
             role: 'user',
