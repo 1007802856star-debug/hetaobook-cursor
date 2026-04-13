@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,6 +11,84 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { PenTool, Loader2, CheckCircle2, AlertCircle, Eye, Sparkles, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { useToast } from '@/hooks/use-toast'
+
+/**
+ * Smart text formatter that splits AI-generated feedback into individual points.
+ * Handles formats like:
+ * - Numbered lists: "1. xxx 2. xxx 3. xxx" or "1. xxx\n2. xxx"
+ * - Semicolon-separated: "xxx；xxx；xxx"
+ * - Bullet points: "• xxx • xxx" or "- xxx - xxx"
+ */
+function formatFeedbackText(text: string): string[] {
+  if (!text) return []
+  const trimmed = text.trim()
+  if (!trimmed) return []
+
+  // Check if text already has proper line breaks with multiple lines
+  const lines = trimmed.split('\n').map(l => l.trim()).filter(Boolean)
+  if (lines.length > 1) {
+    // Already has line breaks - just return each line
+    return lines
+  }
+
+  // Single line or no meaningful breaks - try to split by patterns
+  const singleLine = lines[0] || trimmed
+
+  // Pattern 1: Numbered list like "1. xxx 2. xxx" or "1、xxx 2、xxx"
+  // Split by number-dot or number-Chinese-dot patterns
+  const numberedMatch = singleLine.match(/\d[.、．]\s/)
+  if (numberedMatch) {
+    // Split by numbered patterns, keeping the number prefix
+    const parts = singleLine.split(/(?=\d[.、．]\s)/).map(s => s.trim()).filter(Boolean)
+    if (parts.length > 1) return parts
+  }
+
+  // Pattern 2: Chinese semicolons separating points
+  if (singleLine.includes('；')) {
+    const parts = singleLine.split('；').map(s => s.trim()).filter(Boolean)
+    if (parts.length > 1) return parts
+  }
+
+  // Pattern 3: Regular semicolons separating points
+  if (singleLine.includes(';')) {
+    const parts = singleLine.split(';').map(s => s.trim()).filter(Boolean)
+    if (parts.length > 1) return parts
+  }
+
+  // Pattern 4: Bullet points with • or - (but not at the very start)
+  const bulletMatch = singleLine.match(/[•·]\s/)
+  if (bulletMatch) {
+    const parts = singleLine.split(/[•·]\s/).map(s => s.trim()).filter(Boolean)
+    if (parts.length > 1) return parts
+  }
+
+  // No splitting pattern found - return as single item
+  return [singleLine]
+}
+
+/**
+ * Renders formatted feedback text with each point on its own line
+ */
+function FormattedText({ text, className = '' }: { text: string; className?: string }) {
+  const points = useMemo(() => formatFeedbackText(text), [text])
+
+  if (points.length === 0) return null
+
+  if (points.length === 1) {
+    return <p className={`text-sm text-gray-600 ${className}`}>{points[0]}</p>
+  }
+
+  return (
+    <ul className={`text-sm text-gray-600 space-y-1.5 ${className}`}>
+      {points.map((point, i) => (
+        <li key={i} className="flex gap-2">
+          <span className="shrink-0 mt-0.5 w-1.5 h-1.5 rounded-full bg-current opacity-40" />
+          <span className="flex-1">{point}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 interface Assignment {
   id: string
@@ -61,7 +139,7 @@ export function AIGrading() {
   const [viewingResult, setViewingResult] = useState<GradingResult | null>(null)
   const [viewingStudent, setViewingStudent] = useState<string>('')
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
-  const { selectedAssignmentId, setSelectedAssignmentId } = useAppStore()
+  const { selectedAssignmentId, setSelectedAssignmentId, assignmentVersion } = useAppStore()
   const { toast } = useToast()
 
   const fetchAssignments = useCallback(async () => {
@@ -93,6 +171,7 @@ export function AIGrading() {
   }, [selectedId, toast])
 
   useEffect(() => { fetchAssignments() }, [fetchAssignments])
+  useEffect(() => { fetchAssignments() }, [assignmentVersion])
   useEffect(() => { if (selectedId) fetchSubmissions() }, [selectedId, fetchSubmissions])
 
   const handleGradeSingle = async (submissionId: string, studentName: string) => {
@@ -353,35 +432,53 @@ export function AIGrading() {
                           </div>
                         </div>
                       )}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
                         {s.result.evaluation && (
-                          <div className="md:col-span-2">
-                            <p className="text-sm font-medium text-gray-700 mb-1">📋 总体评价</p>
-                            <p className="text-sm text-gray-600 whitespace-pre-wrap">{s.result.evaluation}</p>
+                          <div>
+                            <p className="text-sm font-medium text-gray-700 mb-1.5">📋 总体评价</p>
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                              <FormattedText text={s.result.evaluation} />
+                            </div>
                           </div>
                         )}
                         {s.result.strengths && (
                           <div>
-                            <p className="text-sm font-medium text-emerald-700 mb-1">✅ 优点</p>
-                            <p className="text-sm text-gray-600 whitespace-pre-wrap">{s.result.strengths}</p>
+                            <p className="text-sm font-medium text-emerald-700 mb-1.5">✅ 优点</p>
+                            <div className="bg-emerald-50 p-3 rounded-lg">
+                              <FormattedText text={s.result.strengths} />
+                            </div>
                           </div>
                         )}
                         {s.result.weaknesses && (
                           <div>
-                            <p className="text-sm font-medium text-red-700 mb-1">⚠️ 不足</p>
-                            <p className="text-sm text-gray-600 whitespace-pre-wrap">{s.result.weaknesses}</p>
+                            <p className="text-sm font-medium text-red-700 mb-1.5">⚠️ 不足</p>
+                            <div className="bg-red-50 p-3 rounded-lg">
+                              <FormattedText text={s.result.weaknesses} />
+                            </div>
+                          </div>
+                        )}
+                        {s.result.modifications && (
+                          <div>
+                            <p className="text-sm font-medium text-blue-700 mb-1.5">📝 修改建议</p>
+                            <div className="bg-blue-50 p-3 rounded-lg">
+                              <FormattedText text={s.result.modifications} />
+                            </div>
                           </div>
                         )}
                         {s.result.suggestions && (
                           <div>
-                            <p className="text-sm font-medium text-blue-700 mb-1">💡 建议</p>
-                            <p className="text-sm text-gray-600 whitespace-pre-wrap">{s.result.suggestions}</p>
+                            <p className="text-sm font-medium text-teal-700 mb-1.5">💡 建议</p>
+                            <div className="bg-teal-50 p-3 rounded-lg">
+                              <FormattedText text={s.result.suggestions} />
+                            </div>
                           </div>
                         )}
                         {s.result.feedback && (
                           <div>
-                            <p className="text-sm font-medium text-purple-700 mb-1">💌 反馈</p>
-                            <p className="text-sm text-gray-600 whitespace-pre-wrap">{s.result.feedback}</p>
+                            <p className="text-sm font-medium text-purple-700 mb-1.5">💌 反馈</p>
+                            <div className="bg-purple-50 p-3 rounded-lg">
+                              <FormattedText text={s.result.feedback} />
+                            </div>
                           </div>
                         )}
                       </div>
@@ -450,38 +547,50 @@ export function AIGrading() {
               {/* Detailed feedback */}
               {viewingResult.evaluation && (
                 <div>
-                  <h4 className="font-medium text-emerald-700 mb-1">📋 总体评价</h4>
-                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-emerald-50 p-3 rounded-lg">{viewingResult.evaluation}</p>
+                  <h4 className="font-medium text-emerald-700 mb-1.5">📋 总体评价</h4>
+                  <div className="bg-emerald-50 p-3 rounded-lg">
+                    <FormattedText text={viewingResult.evaluation} />
+                  </div>
                 </div>
               )}
               {viewingResult.strengths && (
                 <div>
-                  <h4 className="font-medium text-green-700 mb-1">✅ 优点</h4>
-                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-green-50 p-3 rounded-lg">{viewingResult.strengths}</p>
+                  <h4 className="font-medium text-green-700 mb-1.5">✅ 优点</h4>
+                  <div className="bg-green-50 p-3 rounded-lg">
+                    <FormattedText text={viewingResult.strengths} />
+                  </div>
                 </div>
               )}
               {viewingResult.weaknesses && (
                 <div>
-                  <h4 className="font-medium text-orange-700 mb-1">⚠️ 不足之处</h4>
-                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-orange-50 p-3 rounded-lg">{viewingResult.weaknesses}</p>
+                  <h4 className="font-medium text-orange-700 mb-1.5">⚠️ 不足之处</h4>
+                  <div className="bg-orange-50 p-3 rounded-lg">
+                    <FormattedText text={viewingResult.weaknesses} />
+                  </div>
                 </div>
               )}
               {viewingResult.modifications && (
                 <div>
-                  <h4 className="font-medium text-blue-700 mb-1">📝 修改建议</h4>
-                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-blue-50 p-3 rounded-lg">{viewingResult.modifications}</p>
+                  <h4 className="font-medium text-blue-700 mb-1.5">📝 修改建议</h4>
+                  <div className="bg-blue-50 p-3 rounded-lg">
+                    <FormattedText text={viewingResult.modifications} />
+                  </div>
                 </div>
               )}
               {viewingResult.feedback && (
                 <div>
-                  <h4 className="font-medium text-purple-700 mb-1">💌 反馈意见</h4>
-                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-purple-50 p-3 rounded-lg">{viewingResult.feedback}</p>
+                  <h4 className="font-medium text-purple-700 mb-1.5">💌 反馈意见</h4>
+                  <div className="bg-purple-50 p-3 rounded-lg">
+                    <FormattedText text={viewingResult.feedback} />
+                  </div>
                 </div>
               )}
               {viewingResult.suggestions && (
                 <div>
-                  <h4 className="font-medium text-teal-700 mb-1">💡 改进建议</h4>
-                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-teal-50 p-3 rounded-lg">{viewingResult.suggestions}</p>
+                  <h4 className="font-medium text-teal-700 mb-1.5">💡 改进建议</h4>
+                  <div className="bg-teal-50 p-3 rounded-lg">
+                    <FormattedText text={viewingResult.suggestions} />
+                  </div>
                 </div>
               )}
             </div>

@@ -57,7 +57,7 @@ export function WorkSubmission() {
   const [selectedId, setSelectedId] = useState<string>('')
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [loading, setLoading] = useState(true)
-  const { selectedAssignmentId, setSelectedAssignmentId } = useAppStore()
+  const { selectedAssignmentId, setSelectedAssignmentId, assignmentVersion } = useAppStore()
   const { toast } = useToast()
 
   // Custom fields
@@ -106,6 +106,7 @@ export function WorkSubmission() {
   }, [selectedId, toast])
 
   useEffect(() => { fetchAssignments() }, [fetchAssignments])
+  useEffect(() => { fetchAssignments() }, [assignmentVersion])
   useEffect(() => { if (selectedId) fetchSubmissions() }, [selectedId, fetchSubmissions])
 
   // Custom field management

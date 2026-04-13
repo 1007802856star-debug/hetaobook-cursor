@@ -59,7 +59,7 @@ export function AssignmentManager() {
   const [newAssignment, setNewAssignment] = useState({ title: '', description: '', subject: '' })
   const [newCriteria, setNewCriteria] = useState({ criterion: '', description: '', weight: 1, maxScore: 100 })
   const [newBackground, setNewBackground] = useState({ content: '', source: '' })
-  const { setSelectedAssignmentId } = useAppStore()
+  const { setSelectedAssignmentId, bumpAssignmentVersion } = useAppStore()
   const { toast } = useToast()
 
   const fetchAssignments = useCallback(async () => {
@@ -109,6 +109,7 @@ export function AssignmentManager() {
         toast({ title: '创建成功', description: '作业已创建' })
         setSelectedId(data.id)
         setSelectedAssignmentId(data.id)
+        bumpAssignmentVersion()
       }
     } catch {
       toast({ title: '创建失败', variant: 'destructive' })
@@ -131,6 +132,7 @@ export function AssignmentManager() {
         setEditMode(false)
         fetchAssignments()
         toast({ title: '更新成功' })
+        bumpAssignmentVersion()
       }
     } catch {
       toast({ title: '更新失败', variant: 'destructive' })
@@ -149,6 +151,7 @@ export function AssignmentManager() {
           setSelectedAssignmentId(null)
         }
         toast({ title: '删除成功' })
+        bumpAssignmentVersion()
       }
     } catch {
       toast({ title: '删除失败', variant: 'destructive' })

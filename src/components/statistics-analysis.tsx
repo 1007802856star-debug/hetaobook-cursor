@@ -33,7 +33,7 @@ export function StatisticsAnalysis() {
     scores: Array<{ score: number; comment: string; criteria: { criterion: string; maxScore: number } }>
   }>>([])
   const [loading, setLoading] = useState(true)
-  const { selectedAssignmentId, setSelectedAssignmentId } = useAppStore()
+  const { selectedAssignmentId, setSelectedAssignmentId, assignmentVersion } = useAppStore()
   const { toast } = useToast()
 
   const fetchAssignments = useCallback(async () => {
@@ -70,6 +70,7 @@ export function StatisticsAnalysis() {
   }, [selectedId, toast])
 
   useEffect(() => { fetchAssignments() }, [fetchAssignments])
+  useEffect(() => { fetchAssignments() }, [assignmentVersion])
   useEffect(() => { if (selectedId) fetchData() }, [selectedId, fetchData])
 
   if (loading) {
