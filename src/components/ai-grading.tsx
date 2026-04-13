@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { PenTool, Loader2, CheckCircle2, AlertCircle, Eye, Sparkles, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
+import { PenTool, Loader2, CheckCircle2, AlertCircle, Eye, Sparkles, ChevronDown, ChevronUp, RotateCcw, Cpu, Zap, FileCheck, MessageSquare } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { useToast } from '@/hooks/use-toast'
 
@@ -139,6 +139,7 @@ export function AIGrading() {
   const [viewingResult, setViewingResult] = useState<GradingResult | null>(null)
   const [viewingStudent, setViewingStudent] = useState<string>('')
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const [aiModelInfo, setAiModelInfo] = useState<{ displayName: string; model: string; verified: boolean } | null>(null)
   const { selectedAssignmentId, setSelectedAssignmentId, assignmentVersion } = useAppStore()
   const { toast } = useToast()
 
@@ -173,6 +174,14 @@ export function AIGrading() {
   useEffect(() => { fetchAssignments() }, [fetchAssignments])
   useEffect(() => { fetchAssignments() }, [assignmentVersion])
   useEffect(() => { if (selectedId) fetchSubmissions() }, [selectedId, fetchSubmissions])
+
+  // Fetch AI model info
+  useEffect(() => {
+    fetch('/api/ai-model')
+      .then(res => res.json())
+      .then(data => setAiModelInfo(data))
+      .catch(() => {})
+  }, [])
 
   const handleGradeSingle = async (submissionId: string, studentName: string) => {
     setGradingIds(prev => new Set(prev).add(submissionId))
@@ -283,7 +292,53 @@ export function AIGrading() {
           <h2 className="text-lg font-semibold text-gray-900">智能批改</h2>
           <p className="text-sm text-gray-500">AI驱动的作业评价与反馈</p>
         </div>
+        {/* AI Model Badge */}
+        <div className="flex items-center gap-2">
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${
+            aiModelInfo?.verified
+              ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'
+              : 'bg-gray-50 border-gray-200'
+          }`}>
+            <Cpu className={`w-4 h-4 ${aiModelInfo?.verified ? 'text-blue-600' : 'text-gray-400'}`} />
+            <span className={`text-sm font-medium ${aiModelInfo?.verified ? 'text-blue-700' : 'text-gray-500'}`}>
+              {aiModelInfo?.displayName || '加载中...'}
+            </span>
+            {aiModelInfo?.verified ? (
+              <Badge variant="outline" className="text-xs h-5 px-1.5 border-blue-200 text-blue-600 bg-blue-50">AI</Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs h-5 px-1.5 border-gray-200 text-gray-400">未连接</Badge>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* AI Grading Process Info */}
+      <Card className="border-blue-100 bg-gradient-to-r from-blue-50/50 to-indigo-50/50">
+        <CardContent className="pt-4 pb-4">
+          <div className="flex items-center gap-6 text-sm">
+            <div className="flex items-center gap-2 text-gray-600">
+              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
+                <FileCheck className="w-3.5 h-3.5 text-blue-600" />
+              </div>
+              <span>读取评分标准</span>
+            </div>
+            <div className="text-gray-300">→</div>
+            <div className="flex items-center gap-2 text-gray-600">
+              <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center">
+                <Zap className="w-3.5 h-3.5 text-indigo-600" />
+              </div>
+              <span>AI智能分析</span>
+            </div>
+            <div className="text-gray-300">→</div>
+            <div className="flex items-center gap-2 text-gray-600">
+              <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center">
+                <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+              </div>
+              <span>生成评价反馈</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Assignment selector + batch grade */}
       <Card>
