@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { PenTool, Loader2, CheckCircle2, AlertCircle, Eye, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
+import { PenTool, Loader2, CheckCircle2, AlertCircle, Eye, Sparkles, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { useToast } from '@/hooks/use-toast'
 
@@ -101,7 +101,7 @@ export function AIGrading() {
       const res = await fetch(`/api/grade/${submissionId}`, { method: 'POST' })
       if (res.ok) {
         const result = await res.json()
-        toast({ title: '批改完成', description: `${studentName} 的作业已批改，得分：${result.totalScore}` })
+        toast({ title: '批改完成', description: `${studentName} 的作业已批改，得分：${result.totalScore}/${result.maxScore}` })
         fetchSubmissions()
       } else {
         const err = await res.json()
@@ -120,7 +120,8 @@ export function AIGrading() {
 
   const handleBatchGrade = async () => {
     if (!selectedId) return
-    const ungraded = submissions.filter(s => s.status === 'submitted')
+    // Include both 'submitted' and any stuck 'grading' submissions
+    const ungraded = submissions.filter(s => s.status === 'submitted' || s.status === 'grading')
     if (ungraded.length === 0) {
       toast({ title: '没有待批改的作业' })
       return
@@ -169,6 +170,7 @@ export function AIGrading() {
   }
 
   const getScoreColor = (score: number, max: number) => {
+    if (max === 0) return 'text-gray-600'
     const ratio = score / max
     if (ratio >= 0.9) return 'text-emerald-600'
     if (ratio >= 0.8) return 'text-green-600'
@@ -178,6 +180,7 @@ export function AIGrading() {
   }
 
   const getScoreBg = (score: number, max: number) => {
+    if (max === 0) return 'bg-gray-50 border-gray-200'
     const ratio = score / max
     if (ratio >= 0.9) return 'bg-emerald-50 border-emerald-200'
     if (ratio >= 0.8) return 'bg-green-50 border-green-200'
@@ -190,7 +193,8 @@ export function AIGrading() {
     return <div className="animate-pulse space-y-4"><div className="h-10 bg-gray-200 rounded" /><div className="h-40 bg-gray-200 rounded" /></div>
   }
 
-  const ungradedCount = submissions.filter(s => s.status === 'submitted').length
+  // Count ungraded: submitted + stuck grading
+  const ungradedCount = submissions.filter(s => s.status === 'submitted' || s.status === 'grading').length
   const gradedCount = submissions.filter(s => s.status === 'graded').length
 
   return (
@@ -263,12 +267,12 @@ export function AIGrading() {
             </Card>
           ) : (
             submissions.map(s => (
-              <Card key={s.id} className={`transition-all ${s.status === 'graded' ? getScoreBg(s.result?.totalScore || 0, s.result?.maxScore || 100) : ''}`}>
+              <Card key={s.id} className={`transition-all ${s.status === 'graded' && s.result ? getScoreBg(s.result.totalScore, s.result.maxScore) : ''}`}>
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-center gap-4">
                     {/* Student info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium">{s.studentName}</span>
                         {s.studentId && <span className="text-xs text-gray-400">{s.studentId}</span>}
                         {s.status === 'graded' && s.result && (
@@ -285,17 +289,17 @@ export function AIGrading() {
 
                     {/* Actions */}
                     <div className="flex items-center gap-2 shrink-0">
-                      {s.status === 'submitted' && (
+                      {(s.status === 'submitted' || s.status === 'grading') && (
                         <Button
                           size="sm"
                           onClick={() => handleGradeSingle(s.id, s.studentName)}
-                          disabled={gradingIds.has(s.id)}
+                          disabled={gradingIds.has(s.id) || batchGrading}
                           className="bg-emerald-600 hover:bg-emerald-700"
                         >
                           {gradingIds.has(s.id) ? (
                             <><Loader2 className="w-3 h-3 mr-1 animate-spin" />批改中</>
                           ) : (
-                            <><PenTool className="w-3 h-3 mr-1" />批改</>
+                            <><PenTool className="w-3 h-3 mr-1" />{s.status === 'grading' ? '重新批改' : '批改'}</>
                           )}
                         </Button>
                       )}
@@ -317,10 +321,16 @@ export function AIGrading() {
                             <Eye className="w-3 h-3 mr-1" />
                             详情
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleGradeSingle(s.id, s.studentName)}
+                            disabled={gradingIds.has(s.id) || batchGrading}
+                            title="重新批改"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                          </Button>
                         </>
-                      )}
-                      {s.status === 'grading' && (
-                        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
                       )}
                     </div>
                   </div>
@@ -328,7 +338,28 @@ export function AIGrading() {
                   {/* Expanded result preview */}
                   {expandedIds.has(s.id) && s.result && (
                     <div className="mt-4 pt-4 border-t">
+                      {/* Criteria scores summary */}
+                      {s.result.scores.length > 0 && (
+                        <div className="mb-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                            {s.result.scores.map(cs => (
+                              <div key={cs.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-sm">
+                                <span className="text-gray-700 truncate mr-2">{cs.criteria?.criterion || '维度'}</span>
+                                <span className={`font-medium ${getScoreColor(cs.score, cs.criteria?.maxScore || 100)}`}>
+                                  {cs.score}/{cs.criteria?.maxScore || 100}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {s.result.evaluation && (
+                          <div className="md:col-span-2">
+                            <p className="text-sm font-medium text-gray-700 mb-1">📋 总体评价</p>
+                            <p className="text-sm text-gray-600 whitespace-pre-wrap">{s.result.evaluation}</p>
+                          </div>
+                        )}
                         {s.result.strengths && (
                           <div>
                             <p className="text-sm font-medium text-emerald-700 mb-1">✅ 优点</p>
@@ -398,7 +429,7 @@ export function AIGrading() {
                   <div className="space-y-2">
                     {viewingResult.scores.map(cs => (
                       <div key={cs.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                        <span className="text-sm font-medium min-w-[100px]">{cs.criteria?.criterion || '维度'}</span>
+                        <span className="text-sm font-medium min-w-[120px]">{cs.criteria?.criterion || '维度'}</span>
                         <div className="flex-1">
                           <Progress
                             value={(cs.score / (cs.criteria?.maxScore || 100)) * 100}

@@ -299,6 +299,7 @@ export function AssignmentManager() {
           <CardContent>
             <div className="flex gap-4 text-sm text-gray-600">
               <span>评分维度: {detail.criteria.length}</span>
+              <span>满分: {detail.criteria.reduce((sum, c) => sum + c.maxScore, 0)}分</span>
               <span>背景知识: {detail.backgrounds.length}</span>
               <span>提交数: {detail.submissions?.length || 0}</span>
             </div>

@@ -7,15 +7,62 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+
+    // Fix stale statuses: any submission with status='grading' for more than 5 minutes
+    // should be reset to 'submitted' (likely a failed grading attempt)
+    const staleThreshold = new Date(Date.now() - 5 * 60 * 1000)
+    const staleGrading = await db.studentWork.findMany({
+      where: {
+        assignmentId: id,
+        status: 'grading',
+        updatedAt: { lt: staleThreshold }
+      }
+    })
+    if (staleGrading.length > 0) {
+      await db.studentWork.updateMany({
+        where: {
+          id: { in: staleGrading.map(s => s.id) },
+        },
+        data: { status: 'submitted' }
+      })
+    }
+
+    // Also fix: submissions with status='graded' but no result, or status='submitted' with result
     const submissions = await db.studentWork.findMany({
       where: { assignmentId: id },
       orderBy: { submittedAt: 'desc' },
       include: {
         result: {
-          include: { scores: true }
+          include: {
+            scores: {
+              include: {
+                criteria: { select: { criterion: true, maxScore: true } }
+              }
+            }
+          }
         }
       }
     })
+
+    // Fix inconsistencies
+    for (const s of submissions) {
+      if (s.status === 'graded' && !s.result) {
+        // Has graded status but no result - reset to submitted
+        await db.studentWork.update({
+          where: { id: s.id },
+          data: { status: 'submitted' }
+        })
+        s.status = 'submitted'
+      } else if (s.status === 'submitted' && s.result) {
+        // Has result but still marked as submitted - update to graded
+        await db.studentWork.update({
+          where: { id: s.id },
+          data: { status: 'graded' }
+        })
+        s.status = 'graded'
+      }
+    }
+
     return NextResponse.json(submissions)
   } catch (error) {
     console.error('Failed to fetch submissions:', error)
