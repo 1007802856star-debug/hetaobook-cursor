@@ -43,6 +43,7 @@ model GradingCriteria {
 model Background {
   id           String   @id @default(cuid())
   assignmentId String
+  category     String   @default("knowledge")  // grading_standard | reference_answer | knowledge
   content      String
   source       String   @default("")
   order        Int      @default(0)

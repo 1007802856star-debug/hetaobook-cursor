@@ -74,8 +74,9 @@ export interface StatisticsData {
   averageScore: number;
   maxScore: number;
   minScore: number;
-  scoreDistribution: { range: string; count: number }[];
+  totalMaxScore: number;
+  scoreDistribution: { range: string; count: number; min: number; max: number }[];
   criteriaAverages: { name: string; average: number; maxScore: number }[];
   commonWeaknesses: string[];
-  topWorks: { studentName: string; score: number }[];
+  topWorks: { studentName: string; score: number; maxScore: number }[];
 }

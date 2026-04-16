@@ -33,7 +33,7 @@ export function StatisticsAnalysis() {
     scores: Array<{ score: number; comment: string; criteria: { criterion: string; maxScore: number } }>
   }>>([])
   const [loading, setLoading] = useState(true)
-  const { selectedAssignmentId, setSelectedAssignmentId } = useAppStore()
+  const { selectedAssignmentId, setSelectedAssignmentId, assignmentVersion } = useAppStore()
   const { toast } = useToast()
 
   const fetchAssignments = useCallback(async () => {
@@ -70,6 +70,7 @@ export function StatisticsAnalysis() {
   }, [selectedId, toast])
 
   useEffect(() => { fetchAssignments() }, [fetchAssignments])
+  useEffect(() => { fetchAssignments() }, [assignmentVersion])
   useEffect(() => { if (selectedId) fetchData() }, [selectedId, fetchData])
 
   if (loading) {
@@ -106,7 +107,7 @@ export function StatisticsAnalysis() {
       {selectedId && stats && (
         <>
           {/* Summary cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200">
               <CardContent className="pt-4 pb-4">
                 <div className="flex items-center gap-3">
@@ -115,7 +116,7 @@ export function StatisticsAnalysis() {
                   </div>
                   <div>
                     <p className="text-xs text-emerald-600">平均分</p>
-                    <p className="text-2xl font-bold text-emerald-900">{stats.averageScore}</p>
+                    <p className="text-2xl font-bold text-emerald-900">{stats.averageScore}<span className="text-sm font-normal text-emerald-600">/{stats.totalMaxScore || 100}</span></p>
                   </div>
                 </div>
               </CardContent>
@@ -128,7 +129,7 @@ export function StatisticsAnalysis() {
                   </div>
                   <div>
                     <p className="text-xs text-blue-600">最高分</p>
-                    <p className="text-2xl font-bold text-blue-900">{stats.maxScore}</p>
+                    <p className="text-2xl font-bold text-blue-900">{stats.maxScore}<span className="text-sm font-normal text-blue-600">/{stats.totalMaxScore || 100}</span></p>
                   </div>
                 </div>
               </CardContent>
@@ -141,7 +142,7 @@ export function StatisticsAnalysis() {
                   </div>
                   <div>
                     <p className="text-xs text-orange-600">最低分</p>
-                    <p className="text-2xl font-bold text-orange-900">{stats.minScore}</p>
+                    <p className="text-2xl font-bold text-orange-900">{stats.minScore}<span className="text-sm font-normal text-orange-600">/{stats.totalMaxScore || 100}</span></p>
                   </div>
                 </div>
               </CardContent>
@@ -155,6 +156,19 @@ export function StatisticsAnalysis() {
                   <div>
                     <p className="text-xs text-purple-600">已批改</p>
                     <p className="text-2xl font-bold text-purple-900">{stats.gradedCount}/{stats.totalSubmissions}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-teal-50 to-teal-100 border-teal-200">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-teal-500 flex items-center justify-center">
+                    <BarChart3 className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-teal-600">满分</p>
+                    <p className="text-2xl font-bold text-teal-900">{stats.totalMaxScore || 100}</p>
                   </div>
                 </div>
               </CardContent>
@@ -272,7 +286,7 @@ export function StatisticsAnalysis() {
                           {i + 1}
                         </div>
                         <span className="font-medium flex-1">{w.studentName}</span>
-                        <Badge className="bg-emerald-100 text-emerald-700">{w.score}分</Badge>
+                        <Badge className="bg-emerald-100 text-emerald-700">{w.score}/{w.maxScore || stats.totalMaxScore || 100}</Badge>
                       </div>
                     ))}
                   </div>
@@ -323,11 +337,11 @@ export function StatisticsAnalysis() {
                             <TableCell className="text-gray-400">{r.studentWork.studentId || '-'}</TableCell>
                             <TableCell>
                               <span className={`font-bold ${
-                                r.totalScore / r.maxScore >= 0.9 ? 'text-emerald-600' :
-                                r.totalScore / r.maxScore >= 0.7 ? 'text-yellow-600' :
+                                r.maxScore > 0 && r.totalScore / r.maxScore >= 0.9 ? 'text-emerald-600' :
+                                r.maxScore > 0 && r.totalScore / r.maxScore >= 0.7 ? 'text-yellow-600' :
                                 'text-red-600'
                               }`}>
-                                {r.totalScore}
+                                {r.totalScore}/{r.maxScore}
                               </span>
                             </TableCell>
                             {r.scores.map((s, j) => (

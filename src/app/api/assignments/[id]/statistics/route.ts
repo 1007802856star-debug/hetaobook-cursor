@@ -29,6 +29,12 @@ export async function GET(
       where: { assignmentId: id }
     })
 
+    // Get the assignment's criteria to calculate total maxScore
+    const assignment = await db.assignment.findUnique({
+      where: { id },
+      include: { criteria: true }
+    })
+
     if (results.length === 0) {
       return NextResponse.json({
         totalSubmissions: submissions.length,
@@ -36,6 +42,7 @@ export async function GET(
         averageScore: 0,
         maxScore: 0,
         minScore: 0,
+        totalMaxScore: assignment?.criteria.reduce((sum, c) => sum + c.maxScore, 0) || 100,
         scoreDistribution: [],
         criteriaAverages: [],
         commonWeaknesses: [],
@@ -49,19 +56,13 @@ export async function GET(
     const maxScore = Math.max(...scores)
     const minScore = Math.min(...scores)
 
-    // Score distribution
-    const ranges = [
-      { range: '0-59', min: 0, max: 59 },
-      { range: '60-69', min: 60, max: 69 },
-      { range: '70-79', min: 70, max: 79 },
-      { range: '80-89', min: 80, max: 89 },
-      { range: '90-100', min: 90, max: 100 },
-    ]
+    // Calculate total max score from criteria (or use the maxScore from the first result as fallback)
+    const totalMaxScore = assignment?.criteria.reduce((sum, c) => sum + c.maxScore, 0)
+      || results[0]?.maxScore
+      || 100
 
-    const scoreDistribution = ranges.map(r => ({
-      range: r.range,
-      count: scores.filter(s => s >= r.min && s <= r.max).length
-    }))
+    // Score distribution - dynamic ranges based on totalMaxScore
+    const scoreDistribution = generateScoreDistribution(scores, totalMaxScore)
 
     // Criteria averages
     const criteriaMap = new Map<string, { name: string; scores: number[]; maxScore: number }>()
@@ -94,6 +95,7 @@ export async function GET(
       .map(r => ({
         studentName: r.studentWork.studentName,
         score: r.totalScore,
+        maxScore: r.maxScore,
       }))
 
     return NextResponse.json({
@@ -102,6 +104,7 @@ export async function GET(
       averageScore: Math.round(averageScore * 10) / 10,
       maxScore: Math.round(maxScore * 10) / 10,
       minScore: Math.round(minScore * 10) / 10,
+      totalMaxScore,
       scoreDistribution,
       criteriaAverages,
       commonWeaknesses,
@@ -111,4 +114,26 @@ export async function GET(
     console.error('Failed to fetch statistics:', error)
     return NextResponse.json({ error: 'Failed to fetch statistics' }, { status: 500 })
   }
+}
+
+function generateScoreDistribution(scores: number[], totalMaxScore: number) {
+  // Generate distribution based on percentage of totalMaxScore
+  const percentageRanges = [
+    { range: '不及格 (<60%)', minPct: 0, maxPct: 0.6 },
+    { range: '及格 (60-69%)', minPct: 0.6, maxPct: 0.7 },
+    { range: '中等 (70-79%)', minPct: 0.7, maxPct: 0.8 },
+    { range: '良好 (80-89%)', minPct: 0.8, maxPct: 0.9 },
+    { range: '优秀 (90-100%)', minPct: 0.9, maxPct: 1.01 },
+  ]
+
+  return percentageRanges.map(r => {
+    const minScore = r.minPct * totalMaxScore
+    const maxScoreVal = r.maxPct * totalMaxScore
+    return {
+      range: r.range,
+      count: scores.filter(s => s >= minScore && s < maxScoreVal).length,
+      min: Math.round(minScore * 10) / 10,
+      max: Math.round((r.maxPct === 1.01 ? totalMaxScore : maxScoreVal) * 10) / 10,
+    }
+  })
 }
