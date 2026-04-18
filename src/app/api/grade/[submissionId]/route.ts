@@ -151,8 +151,13 @@ export async function POST(
 
     const criteriaListStr = criteriaNames.map((name, i) => `${i + 1}. "${name}"`).join('\n')
 
-    // Build structured system prompt with grading reference materials
+    // Build structured system prompt with grading reference materials and assignment info
     const systemPrompt = `你是一位经验丰富的专业教师，擅长对学生作业进行详细、公正的批改和评价。
+
+## 作业题目
+${assignment.title}
+题干：${assignment.description || '无'}
+科目：${assignment.subject || '未指定'}
 
 ## 评分标准（核心依据）
 ${gradingStandardText}
@@ -203,11 +208,6 @@ ${criteriaText}
     const userPrompt = `## 学生信息
 姓名：${submission.studentName}
 学号：${submission.studentId || '未提供'}
-
-## 作业题目
-${assignment.title}
-题干：${assignment.description || '无'}
-科目：${assignment.subject || '未指定'}
 
 ## 学生作业内容
 ${submission.content}
