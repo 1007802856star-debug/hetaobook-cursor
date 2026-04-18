@@ -151,15 +151,17 @@ export async function POST(
 
     const criteriaListStr = criteriaNames.map((name, i) => `${i + 1}. "${name}"`).join('\n')
 
-    // Build structured system prompt with assignment context embedded
+    // Build structured system prompt with grading reference materials
     const systemPrompt = `你是一位经验丰富的专业教师，擅长对学生作业进行详细、公正的批改和评价。
 
-## 你的批改依据
-你需要综合以下信息对学生作业进行批改：
-1. 题干：作业的原始题目和要求
-2. 评分标准：具体的评分规则和扣分标准，这是评分的核心依据
-3. 参考答案：标准答案或范例，用于对比学生答案的正确性
-4. 相关知识点：与题目相关的关键概念、公式、定理等
+## 评分标准（核心依据）
+${gradingStandardText}
+
+## 参考答案
+${referenceAnswerText}
+
+## 相关知识点
+${knowledgePointText}
 
 ## 批改维度
 ${criteriaText}
@@ -198,18 +200,7 @@ ${criteriaText}
 8. criterionName和dimension必须与批改维度名称完全一致，包括标点符号
 9. 如果某个维度表现优秀无需修改，仍需在modifications中给出肯定性建议（如：'该维度表现优秀，建议继续保持……的方式'）`
 
-    const userPrompt = `## 评分标准（必读）
-${gradingStandardText}
-
-## 参考答案
-${referenceAnswerText}
-
-## 相关知识点
-${knowledgePointText}
-
----
-
-## 学生信息
+    const userPrompt = `## 学生信息
 姓名：${submission.studentName}
 学号：${submission.studentId || '未提供'}
 
