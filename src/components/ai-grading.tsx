@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { PenTool, Loader2, CheckCircle2, AlertCircle, Eye, Sparkles, ChevronDown, ChevronUp, RotateCcw, Cpu, Zap, FileCheck, MessageSquare } from 'lucide-react'
+import { PenTool, Loader2, CheckCircle2, AlertCircle, Eye, Sparkles, ChevronDown, ChevronUp, RotateCcw, Cpu, Zap, FileCheck, MessageSquare, Lightbulb, AlertTriangle, Target } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { useToast } from '@/hooks/use-toast'
 
@@ -87,6 +87,88 @@ function FormattedText({ text, className = '' }: { text: string; className?: str
         </li>
       ))}
     </ul>
+  )
+}
+
+/**
+ * Represents a structured modification item from AI grading
+ */
+interface ModificationItem {
+  dimension?: string
+  issue?: string
+  suggestion?: string
+}
+
+/**
+ * Parse modifications field - supports both new JSON array format and legacy string format
+ */
+function parseModifications(modificationsStr: string): ModificationItem[] | null {
+  if (!modificationsStr) return null
+
+  // Try parsing as JSON array first (new format)
+  try {
+    const parsed = JSON.parse(modificationsStr)
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed
+    }
+  } catch {
+    // Not JSON, treat as plain text
+  }
+
+  // Legacy format: return as single item with suggestion text
+  return [{ suggestion: modificationsStr }]
+}
+
+/**
+ * Renders structured modifications with dimension badges, issues, and specific suggestions
+ */
+function StructuredModifications({ modifications }: { modifications: string }) {
+  const items = useMemo(() => parseModifications(modifications), [modifications])
+
+  if (!items || items.length === 0) return null
+
+  // Check if it's structured (has dimension/issue fields) or legacy
+  const isStructured = items.some(item => item.dimension || item.issue)
+
+  if (!isStructured) {
+    // Legacy format: render as simple text
+    return (
+      <div className="bg-blue-50 p-3 rounded-lg">
+        <FormattedText text={items.map(item => item.suggestion || '').filter(Boolean).join('\n')} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {items.map((item, i) => (
+        <div key={i} className="bg-blue-50/80 border border-blue-100 rounded-lg p-3 space-y-2">
+          {/* Dimension badge */}
+          {item.dimension && (
+            <div className="flex items-center gap-2">
+              <Target className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <Badge variant="outline" className="text-xs h-5 px-2 border-blue-300 text-blue-700 bg-blue-100/50">
+                {item.dimension}
+              </Badge>
+            </div>
+          )}
+          {/* Issue description */}
+          {item.issue && (
+            <div className="flex items-start gap-2 ml-5">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+              <span className="text-sm text-gray-700">{item.issue}</span>
+            </div>
+          )}
+          {/* Specific suggestion with 话术 */}
+          {item.suggestion && (
+            <div className="flex items-start gap-2 ml-5">
+              <Lightbulb className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+              <span className="text-sm text-emerald-800 font-medium">{item.suggestion}</span>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -363,10 +445,17 @@ export function AIGrading() {
             </div>
             <div className="text-gray-300">→</div>
             <div className="flex items-center gap-2 text-gray-600">
+              <div className="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center">
+                <Lightbulb className="w-3.5 h-3.5 text-amber-600" />
+              </div>
+              <span>生成修改建议</span>
+            </div>
+            <div className="text-gray-300">→</div>
+            <div className="flex items-center gap-2 text-gray-600">
               <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center">
                 <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
               </div>
-              <span>生成评价反馈</span>
+              <span>输出评价反馈</span>
             </div>
           </div>
         </CardContent>
@@ -578,25 +667,7 @@ export function AIGrading() {
                         {s.result.modifications && (
                           <div>
                             <p className="text-sm font-medium text-blue-700 mb-1.5">📝 修改建议</p>
-                            <div className="bg-blue-50 p-3 rounded-lg">
-                              <FormattedText text={s.result.modifications} />
-                            </div>
-                          </div>
-                        )}
-                        {s.result.suggestions && (
-                          <div>
-                            <p className="text-sm font-medium text-teal-700 mb-1.5">💡 建议</p>
-                            <div className="bg-teal-50 p-3 rounded-lg">
-                              <FormattedText text={s.result.suggestions} />
-                            </div>
-                          </div>
-                        )}
-                        {s.result.feedback && (
-                          <div>
-                            <p className="text-sm font-medium text-purple-700 mb-1.5">💌 反馈</p>
-                            <div className="bg-purple-50 p-3 rounded-lg">
-                              <FormattedText text={s.result.feedback} />
-                            </div>
+                            <StructuredModifications modifications={s.result.modifications} />
                           </div>
                         )}
                       </div>
@@ -690,25 +761,7 @@ export function AIGrading() {
               {viewingResult.modifications && (
                 <div>
                   <h4 className="font-medium text-blue-700 mb-1.5">📝 修改建议</h4>
-                  <div className="bg-blue-50 p-3 rounded-lg">
-                    <FormattedText text={viewingResult.modifications} />
-                  </div>
-                </div>
-              )}
-              {viewingResult.feedback && (
-                <div>
-                  <h4 className="font-medium text-purple-700 mb-1.5">💌 反馈意见</h4>
-                  <div className="bg-purple-50 p-3 rounded-lg">
-                    <FormattedText text={viewingResult.feedback} />
-                  </div>
-                </div>
-              )}
-              {viewingResult.suggestions && (
-                <div>
-                  <h4 className="font-medium text-teal-700 mb-1.5">💡 改进建议</h4>
-                  <div className="bg-teal-50 p-3 rounded-lg">
-                    <FormattedText text={viewingResult.suggestions} />
-                  </div>
+                  <StructuredModifications modifications={viewingResult.modifications} />
                 </div>
               )}
             </div>
