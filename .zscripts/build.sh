@@ -62,6 +62,9 @@ echo "📦 收集构建产物到 $BUILD_DIR..."
 if [ -d ".next/standalone" ]; then
     echo "  - 复制 .next/standalone"
     cp -r .next/standalone "$BUILD_DIR/next-service-dist/"
+    # 删除 standalone 中的 .env 文件，避免本地 DATABASE_URL 覆盖云端环境变量
+    rm -f "$BUILD_DIR/next-service-dist/.env"
+    echo "  - 已删除 standalone 中的 .env 文件"
 fi
 
 # 复制 Next.js 静态文件
