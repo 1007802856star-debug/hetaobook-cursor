@@ -61,22 +61,39 @@ if [ -f "./next-service-dist/server.js" ]; then
     echo "🚀 启动 Next.js 服务器..."
     cd next-service-dist/ || exit 1
     
+    # 删除 standalone 中的 .env 文件，避免本地 DATABASE_URL 覆盖云端环境变量
+    rm -f .env
+    echo "  - 已清理 .env 文件"
+    
     # 设置环境变量
     export NODE_ENV=production
     export PORT="${PORT:-3000}"
     export HOSTNAME="${HOSTNAME:-0.0.0.0}"
-    export DATABASE_URL="${DATABASE_URL:-$DEFAULT_PACKAGED_DATABASE_URL}"
 
-    if [ "$DATABASE_URL" = "$DEFAULT_PACKAGED_DATABASE_URL" ]; then
-        if [ ! -f "$DEFAULT_PACKAGED_DB_PATH" ]; then
-            echo "❌ 未找到打包后的数据库文件 $DEFAULT_PACKAGED_DB_PATH"
-            echo "   为避免生产环境启动到空数据库，启动已终止"
-            exit 1
+    # 将数据库复制到 /tmp 目录，确保 SQLite 有写权限（WAL 日志需要）
+    CLOUD_DB_DIR="/tmp/nextjs-db"
+    mkdir -p "$CLOUD_DB_DIR"
+    
+    # 尝试从可能的位置复制数据库
+    for db_path in "/app/db/custom.db" "../db/custom.db" "./db/custom.db"; do
+        if [ -f "$db_path" ] && [ ! -f "$CLOUD_DB_DIR/custom.db" ]; then
+            echo "🗄️  从 $db_path 复制数据库到 $CLOUD_DB_DIR/"
+            cp "$db_path" "$CLOUD_DB_DIR/custom.db"
+            break
         fi
+    done
 
-        echo "🗄️  当前使用打包数据库: $DEFAULT_PACKAGED_DB_PATH"
+    if [ -f "$CLOUD_DB_DIR/custom.db" ]; then
+        export DATABASE_URL="file:$CLOUD_DB_DIR/custom.db"
+        echo "🗄️  使用可写数据库: $CLOUD_DB_DIR/custom.db"
+    elif [ -n "$DATABASE_URL" ]; then
+        echo "🗄️  使用外部指定数据库: $DATABASE_URL"
+    elif [ -f "$DEFAULT_PACKAGED_DB_PATH" ]; then
+        export DATABASE_URL="$DEFAULT_PACKAGED_DATABASE_URL"
+        echo "🗄️  使用打包数据库: $DEFAULT_PACKAGED_DB_PATH (注意：可能无法写入)"
     else
-        echo "🗄️  当前使用外部指定数据库: $DATABASE_URL"
+        echo "❌ 未找到数据库文件，启动已终止"
+        exit 1
     fi
     
     # 后台启动 Next.js

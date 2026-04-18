@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  serverExternalPackages: ['@prisma/client', 'prisma', 'better-sqlite3'],
 };
 
 export default nextConfig;
