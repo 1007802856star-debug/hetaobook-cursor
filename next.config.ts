@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
   },
   reactStrictMode: false,
   serverExternalPackages: ['@prisma/client', 'prisma', 'better-sqlite3'],
+  allowedDevOrigins: [
+    '.space.z.ai',
+    '.chatglm.site',
+    '.z.ai',
+  ],
 };
 
 export default nextConfig;
