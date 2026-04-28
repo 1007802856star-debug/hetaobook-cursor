@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
-import ZAI from 'z-ai-web-dev-sdk'
+import { bigmodelChatCompletion, completionTextFromBigmodel } from '@/lib/bigmodel'
 
 // Helper: fuzzy match criterion name
 function matchCriterionName(aiName: string, criteriaNames: string[]): string | null {
@@ -221,31 +221,44 @@ ${criteriaListStr}
 重要提醒：modifications中的suggestion字段必须给出具体的修改建议话术，包含问题定位、正确做法和修改示例，而非笼统的改进方向。`
 
     try {
-      const zai = await ZAI.create()
-      const completion = await zai.chat.completions.create({
+      const completion = await bigmodelChatCompletion({
         messages: [
-          {
-            role: 'system',
-            content: systemPrompt
-          },
-          {
-            role: 'user',
-            content: userPrompt
-          }
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
         ],
         temperature: 0.3,
+        model: 'glm-4-plus',
       })
 
-      const aiContent = completion.choices?.[0]?.message?.content || ''
+      if ((completion as any)?.error) {
+        const err = (completion as any).error
+        const msg = String(err?.message || err?.error || err || 'unknown error')
+        throw new Error(`ZAI API error: ${msg}`)
+      }
+
+      const aiContent = completionTextFromBigmodel(completion)
+      if (!aiContent) {
+        const msg = completion?.choices?.[0]?.message
+        const msgKeys = msg && typeof msg === 'object' ? Object.keys(msg) : []
+        const choiceKeys = completion?.choices?.[0] && typeof completion?.choices?.[0] === 'object'
+          ? Object.keys(completion.choices[0])
+          : []
+        console.error('AI response empty. completion keys:', Object.keys(completion || {}))
+        console.error('AI response empty. choice keys:', choiceKeys)
+        console.error('AI response empty. message keys:', msgKeys)
+      }
 
       // Parse AI response with robust extraction
       let result = extractJSON(aiContent)
 
       if (!result) {
-        console.error('Failed to extract JSON from AI response:', aiContent.substring(0, 500))
+        console.error(
+          'Failed to extract JSON from AI response:',
+          aiContent ? aiContent.substring(0, 500) : '(empty)'
+        )
         // If parsing fails, create a fallback result
         result = {
-          evaluation: aiContent.substring(0, 200),
+          evaluation: aiContent ? aiContent.substring(0, 500) : 'AI 返回为空或无法解析',
           modifications: [],
           feedback: '',
           strengths: '',

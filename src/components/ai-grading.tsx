@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { PenTool, Loader2, CheckCircle2, AlertCircle, Eye, Sparkles, ChevronDown, ChevronUp, RotateCcw, Lightbulb, AlertTriangle, Target } from 'lucide-react'
+import { PenTool, Loader2, CheckCircle2, AlertCircle, Eye, Sparkles, ChevronDown, ChevronUp, RotateCcw, Lightbulb, AlertTriangle, Target, Send } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { useToast } from '@/hooks/use-toast'
 
@@ -231,6 +231,7 @@ export function AIGrading() {
   const [loading, setLoading] = useState(true)
   const [gradingIds, setGradingIds] = useState<Set<string>>(new Set())
   const [batchGrading, setBatchGrading] = useState(false)
+  const [pushingFeishu, setPushingFeishu] = useState(false)
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 })
   const [viewingResult, setViewingResult] = useState<GradingResult | null>(null)
   const [viewingStudent, setViewingStudent] = useState<string>('')
@@ -343,6 +344,39 @@ export function AIGrading() {
     toast({ title: '批量批改完成', description: `成功批改 ${successCount}/${ungraded.length} 份作业` })
   }
 
+  const handlePushToFeishu = async () => {
+    if (!selectedId) return
+    setPushingFeishu(true)
+    try {
+      const res = await fetch('/api/feishu/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignmentId: selectedId }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        toast({
+          title: '推送成功',
+          description: data.message || '已推送到飞书表格',
+        })
+      } else {
+        toast({
+          title: '推送失败',
+          description: data.message || '飞书推送失败，请检查配置',
+          variant: 'destructive',
+        })
+      }
+    } catch {
+      toast({
+        title: '推送失败',
+        description: '网络错误，请稍后重试',
+        variant: 'destructive',
+      })
+    } finally {
+      setPushingFeishu(false)
+    }
+  }
+
   const handleViewResult = (result: GradingResult, studentName: string) => {
     setViewingResult(result)
     setViewingStudent(studentName)
@@ -421,7 +455,7 @@ export function AIGrading() {
                 </div>
                 <Button
                   onClick={handleBatchGrade}
-                  disabled={batchGrading || ungradedCount === 0 || !canGrade}
+                  disabled={batchGrading || ungradedCount === 0 || !canGrade || pushingFeishu}
                   className="bg-emerald-600 hover:bg-emerald-700"
                 >
                   {batchGrading ? (
@@ -433,6 +467,23 @@ export function AIGrading() {
                     <>
                       <Sparkles className="w-4 h-4 mr-2" />
                       一键批改 {ungradedCount > 0 ? `(${ungradedCount}份)` : ''}
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={handlePushToFeishu}
+                  disabled={batchGrading || pushingFeishu}
+                  variant="outline"
+                >
+                  {pushingFeishu ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      推送中
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-2" />
+                      推送到飞书
                     </>
                   )}
                 </Button>

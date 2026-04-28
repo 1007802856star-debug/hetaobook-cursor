@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import ZAI from 'z-ai-web-dev-sdk'
+import { bigmodelChatCompletion, completionTextFromBigmodel } from '@/lib/bigmodel'
 
 // Cache model info to avoid repeated API calls
 let cachedModelInfo: { connected: boolean; model: string } | null = null
@@ -15,14 +15,38 @@ export async function GET() {
       return NextResponse.json(cachedModelInfo)
     }
 
-    // Only verify SDK initialization (no API call needed)
-    const zai = await ZAI.create()
+    // Verify by doing a tiny request (catch invalid credentials/quota issues)
+    const completion = await bigmodelChatCompletion({
+      messages: [{ role: 'user', content: 'ping' }],
+      temperature: 0,
+      max_tokens: 5,
+      model: 'glm-4-plus',
+    })
 
-    if (zai) {
-      cachedModelInfo = {
-        connected: true,
-        model: 'GLM-4-Plus',
-      }
+    if ((completion as any)?.error) {
+      const err = (completion as any).error
+      const msg =
+        typeof err === 'string'
+          ? err
+          : err && typeof err === 'object'
+            ? JSON.stringify(
+                {
+                  message: (err as any).message,
+                  code: (err as any).code,
+                  status: (err as any).status,
+                  error: (err as any).error,
+                  details: (err as any).details,
+                },
+                null,
+                0
+              )
+            : String(err || 'unknown error')
+      throw new Error(`ZAI API error: ${msg}`)
+    }
+
+    const text = completionTextFromBigmodel(completion)
+    if (text || completion) {
+      cachedModelInfo = { connected: true, model: 'GLM-4-Plus' }
       lastCheckTime = now
       return NextResponse.json(cachedModelInfo)
     } else {
@@ -38,6 +62,7 @@ export async function GET() {
     return NextResponse.json({
       connected: false,
       model: '未连接',
+      error: error instanceof Error ? error.message : String(error),
     })
   }
 }
