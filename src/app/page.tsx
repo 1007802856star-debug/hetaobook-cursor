@@ -11,7 +11,11 @@ import { useAppStore } from '@/lib/store'
 
 export default function Home() {
   const { activeTab, setActiveTab } = useAppStore()
-  const [modelStatus, setModelStatus] = useState<{ connected: boolean; model: string } | null>(null)
+  const [modelStatus, setModelStatus] = useState<{
+    connected: boolean
+    model: string
+    error?: string
+  } | null>(null)
 
   useEffect(() => {
     const checkModel = async () => {
@@ -43,11 +47,18 @@ export default function Home() {
                 <p className="text-sm text-gray-500">AI驱动的作业评价与反馈平台</p>
               </div>
             </div>
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
-              modelStatus?.connected
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
-                : 'bg-gray-50 border-gray-200 text-gray-400'
-            }`}>
+            <div
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                modelStatus?.connected
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                  : 'bg-gray-50 border-gray-200 text-gray-400'
+              }`}
+              title={
+                modelStatus?.connected
+                  ? undefined
+                  : modelStatus?.error || '模型未就绪，请检查环境变量或网络'
+              }
+            >
               <Cpu className="w-3.5 h-3.5" />
               <span className="flex items-center gap-1.5">
                 <span className={`inline-block w-1.5 h-1.5 rounded-full ${

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { bigmodelChatCompletion, completionTextFromBigmodel } from '@/lib/bigmodel'
+import { bigmodelChatCompletion, completionTextFromBigmodel, getBigmodelModelId } from '@/lib/bigmodel'
 
 // Cache model info to avoid repeated API calls
 let cachedModelInfo: { connected: boolean; model: string } | null = null
@@ -20,7 +20,6 @@ export async function GET() {
       messages: [{ role: 'user', content: 'ping' }],
       temperature: 0,
       max_tokens: 5,
-      model: 'glm-4-plus',
     })
 
     if ((completion as any)?.error) {
@@ -46,7 +45,14 @@ export async function GET() {
 
     const text = completionTextFromBigmodel(completion)
     if (text || completion) {
-      cachedModelInfo = { connected: true, model: 'GLM-4-Plus' }
+      const id = getBigmodelModelId()
+      const label =
+        id === 'glm-4-plus'
+          ? 'GLM-4-Plus'
+          : id.toLowerCase() === 'glm-4.6v' || id.toLowerCase() === 'glm-4-6v'
+            ? 'GLM-4.6V'
+            : id
+      cachedModelInfo = { connected: true, model: label }
       lastCheckTime = now
       return NextResponse.json(cachedModelInfo)
     } else {

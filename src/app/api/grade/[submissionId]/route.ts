@@ -227,7 +227,6 @@ ${criteriaListStr}
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.3,
-        model: 'glm-4-plus',
       })
 
       if ((completion as any)?.error) {

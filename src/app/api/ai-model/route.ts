@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { bigmodelChatCompletion, completionTextFromBigmodel } from '@/lib/bigmodel'
+import { bigmodelChatCompletion, completionTextFromBigmodel, getBigmodelModelId } from '@/lib/bigmodel'
 import { coerceTextContent } from '@/lib/zai'
 
 // Cache the model info to avoid repeated API calls
@@ -29,7 +29,6 @@ export async function GET() {
       messages: [{ role: 'user', content: '请输出你的模型名称，只输出名称即可。' }],
       temperature: 0,
       max_tokens: 20,
-      model: 'glm-4-plus',
     })
 
     if ((completion as any)?.error) {
@@ -63,7 +62,7 @@ export async function GET() {
       completionTextFromBigmodel(completion) ||
       coerceTextContent(completion?.choices?.[0]?.message?.content)
     const bestName = modelResponse || sdkModel
-    const fallbackName = 'glm-4-plus'
+    const fallbackName = getBigmodelModelId()
     const effectiveName = bestName || fallbackName
     const verified = true
 
@@ -74,7 +73,9 @@ export async function GET() {
       displayName:
         effectiveName === 'glm-4-plus'
           ? 'GLM-4-Plus'
-          : effectiveName,
+          : effectiveName.toLowerCase() === 'glm-4.6v' || effectiveName.toLowerCase() === 'glm-4-6v'
+            ? 'GLM-4.6V'
+            : effectiveName,
     }
 
     return NextResponse.json(cachedModelInfo)

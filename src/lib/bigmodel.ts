@@ -11,6 +11,17 @@ function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.replace(/\/+$/, '')
 }
 
+/** OpenAPI `model` id; override with env `ZAI_MODEL` (e.g. `glm-4.6v`). */
+export function getBigmodelModelId(): string {
+  return process.env.ZAI_MODEL?.trim() || 'glm-4-plus'
+}
+
+function resolveModelId(requested?: string): string {
+  const id = requested?.trim()
+  if (id) return id
+  return getBigmodelModelId()
+}
+
 export async function bigmodelChatCompletion(body: ChatCompletionBody) {
   const baseUrl = process.env.ZAI_BASE_URL
   const apiKey = process.env.ZAI_API_KEY
@@ -28,7 +39,7 @@ export async function bigmodelChatCompletion(body: ChatCompletionBody) {
         authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: body.model || 'glm-4-plus',
+        model: resolveModelId(body.model),
         messages: body.messages,
         temperature: body.temperature,
         max_tokens: body.max_tokens,
