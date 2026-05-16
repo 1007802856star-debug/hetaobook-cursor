@@ -58,6 +58,14 @@ function extractJSON(text: string): any {
   return null
 }
 
+const EVALUATION_MAX_LEN = 150
+
+function truncateEvaluation(text: string, maxLen = EVALUATION_MAX_LEN): string {
+  const s = String(text ?? '').trim()
+  if (s.length <= maxLen) return s
+  return s.slice(0, maxLen)
+}
+
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ submissionId: string }> }
@@ -173,37 +181,25 @@ ${criteriaText}
 各维度满分之和为${totalMaxScore}分。
 
 ## 返回格式
-请返回纯JSON格式（不要包含markdown代码块标记\`\`\`），包含以下字段：
+请返回纯JSON格式（不要包含markdown代码块标记\`\`\`），仅包含以下两个字段：
 {
-  "evaluation": "总体评价（100-200字），结合作业内容、评分标准和参考答案综合评价",
-  "strengths": "优点，指出做得好的地方",
-  "weaknesses": "不足之处，指出与评分标准和参考答案的差距",
-  "modifications": [
-    {
-      "dimension": "对应的评分维度名称（必须与批改维度名称完全一致）",
-      "issue": "具体问题描述，指出该维度中存在的具体问题",
-      "suggestion": "具体修改建议话术，给出可直接使用的修改指导，包括：指出问题位置、说明正确做法、给出修改示例。例如：'第2段中关于XX的论述不够准确，建议修改为：……，因为根据知识点XX，正确的理解应该是……'"
-    }
-  ],
+  "evaluation": "综合评价，结合作业内容、评分标准和参考答案，**不超过${EVALUATION_MAX_LEN}字**",
   "criteriaScores": [
     {
       "criterionName": "维度名称（必须与批改维度名称完全一致）",
-      "score": 数字（该维度得分，不超过该维度满分），
-      "comment": "该维度的评语（50-100字），结合评分标准说明得分原因"
+      "score": 数字（该维度得分，不超过该维度满分）
     }
   ]
 }
 
 ## 重要评分规则
 1. 评分必须严格依据评分标准，对照参考答案判断正确性
-2. 每个维度的score不得超过该维度的满分
-3. totalScore不需要返回，系统会自动将各维度得分加总计算
-4. 评价要具体、有针对性，避免空泛的描述
-5. modifications数组中的每条修改建议必须包含具体话术，给出明确的修改方向和示例，不要只说'需要改进'而不说明如何改
-6. 评语要结合作业内容给出具体例子，引用相关知识点
-7. 必须返回所有维度的评分，不要遗漏
-8. criterionName和dimension必须与批改维度名称完全一致，包括标点符号
-9. 如果某个维度表现优秀无需修改，仍需在modifications中给出肯定性建议（如：'该维度表现优秀，建议继续保持……的方式'）`
+2. 每个维度的 score 不得超过该维度的满分
+3. totalScore 不需要返回，系统会自动将各维度得分加总计算
+4. evaluation 必须控制在 ${EVALUATION_MAX_LEN} 字以内，精炼、有针对性
+5. 必须返回所有维度的评分，不要遗漏
+6. criterionName 必须与批改维度名称完全一致，包括标点符号
+7. 不要返回 strengths、weaknesses、modifications、comment 等任何其他字段`
 
     const userPrompt = `## 学生信息
 姓名：${submission.studentName}
@@ -214,11 +210,9 @@ ${submission.content}
 
 ---
 
-请严格按照批改维度要求进行评价，返回JSON格式结果。
+请严格按照批改维度要求进行评价，返回 JSON。
 评分维度名称必须严格使用以下名称：
-${criteriaListStr}
-
-重要提醒：modifications中的suggestion字段必须给出具体的修改建议话术，包含问题定位、正确做法和修改示例，而非笼统的改进方向。`
+${criteriaListStr}`
 
     try {
       const completion = await bigmodelChatCompletion({
@@ -257,35 +251,17 @@ ${criteriaListStr}
         )
         // If parsing fails, create a fallback result
         result = {
-          evaluation: aiContent ? aiContent.substring(0, 500) : 'AI 返回为空或无法解析',
-          modifications: [],
-          feedback: '',
-          strengths: '',
-          weaknesses: '',
-          suggestions: '',
+          evaluation: truncateEvaluation(
+            aiContent ? aiContent.substring(0, EVALUATION_MAX_LEN * 2) : 'AI 返回为空或无法解析'
+          ),
           criteriaScores: assignment.criteria.map(c => ({
             criterionName: c.criterion,
             score: 0,
-            comment: '评分解析失败'
-          }))
+          })),
         }
       }
 
-      // Ensure all text fields have values
-      result.evaluation = result.evaluation || '无评价'
-      result.strengths = result.strengths || ''
-      result.weaknesses = result.weaknesses || ''
-      result.feedback = result.feedback || ''
-      result.suggestions = result.suggestions || ''
-
-      // Process modifications: convert structured array to JSON string for storage
-      // Support both new format (array of objects) and old format (plain string)
-      let modificationsStr = ''
-      if (Array.isArray(result.modifications)) {
-        modificationsStr = JSON.stringify(result.modifications)
-      } else if (typeof result.modifications === 'string') {
-        modificationsStr = result.modifications
-      }
+      const evaluationText = truncateEvaluation(result.evaluation || '无评价')
 
       // Save the grading result (totalScore will be calculated from criteria scores)
       const gradingResult = await db.gradingResult.create({
@@ -293,13 +269,8 @@ ${criteriaListStr}
           studentWorkId: submissionId,
           totalScore: 0, // Will be updated after saving criteria scores
           maxScore: totalMaxScore,
-          evaluation: result.evaluation,
-          modifications: modificationsStr,
-          feedback: result.feedback,
-          strengths: result.strengths,
-          weaknesses: result.weaknesses,
-          suggestions: result.suggestions,
-        }
+          evaluation: evaluationText,
+        },
       })
 
       // Save criteria scores and calculate total
@@ -321,8 +292,7 @@ ${criteriaListStr}
                 studentWorkId: submissionId,
                 resultId: gradingResult.id,
                 score,
-                comment: cs.comment || '',
-              }
+              },
             })
           }
         }
@@ -345,8 +315,7 @@ ${criteriaListStr}
                 studentWorkId: submissionId,
                 resultId: gradingResult.id,
                 score,
-                comment: cs?.comment || '',
-              }
+              },
             })
           }
         }
@@ -365,8 +334,7 @@ ${criteriaListStr}
                 studentWorkId: submissionId,
                 resultId: gradingResult.id,
                 score: 0,
-                comment: '未能解析该维度评分',
-              }
+              },
             })
           }
         }

@@ -140,3 +140,48 @@ export async function POST(
     return NextResponse.json({ error: '提交失败，请重试' }, { status: 500 })
   }
 }
+
+const BATCH_DELETE_MAX = 100
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: assignmentId } = await params
+
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json({ error: '请求体无效' }, { status: 400 })
+    }
+
+    const rawIds = (body as { ids?: unknown }).ids
+    if (!Array.isArray(rawIds) || rawIds.length === 0) {
+      return NextResponse.json({ error: '请提供要删除的提交 id 列表' }, { status: 400 })
+    }
+
+    const ids = [
+      ...new Set(
+        rawIds.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+      ),
+    ]
+
+    if (ids.length > BATCH_DELETE_MAX) {
+      return NextResponse.json(
+        { error: `单次最多删除 ${BATCH_DELETE_MAX} 条` },
+        { status: 400 }
+      )
+    }
+
+    const result = await db.studentWork.deleteMany({
+      where: { assignmentId, id: { in: ids } },
+    })
+
+    return NextResponse.json({ deleted: result.count })
+  } catch (error) {
+    console.error('Failed to batch delete submissions:', error)
+    return NextResponse.json({ error: '批量删除失败' }, { status: 500 })
+  }
+}

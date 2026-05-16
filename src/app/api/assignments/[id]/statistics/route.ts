@@ -82,11 +82,18 @@ export async function GET(
       maxScore: c.maxScore,
     }))
 
-    // Common weaknesses - collect all weaknesses and find common themes
-    const allWeaknesses = results.map(r => r.weaknesses).filter(Boolean)
-    const commonWeaknesses = allWeaknesses.length > 0
-      ? allWeaknesses.slice(0, 5)
-      : []
+    // 班级维度相对短板：按各维度「平均分/满分」升序取前若干条说明（不再依赖 strengths/weaknesses 文本）
+    const commonWeaknesses =
+      criteriaAverages.length > 0
+        ? [...criteriaAverages]
+            .map((c) => ({
+              label: `${c.name}（班级均分 ${Math.round((c.average / (c.maxScore || 1)) * 100)}%，满分 ${c.maxScore}）`,
+              ratio: c.average / (c.maxScore || 1),
+            }))
+            .sort((a, b) => a.ratio - b.ratio)
+            .slice(0, 5)
+            .map((x) => x.label)
+        : []
 
     // Top works
     const topWorks = results

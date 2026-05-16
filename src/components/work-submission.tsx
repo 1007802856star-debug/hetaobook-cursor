@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,12 +52,14 @@ const DEFAULT_FIELDS: CustomField[] = [
   { id: 'studentId', name: '学号', placeholder: '如：2024001' },
 ]
 
+const SELECT_CAP = 100
+
 export function WorkSubmission() {
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [loading, setLoading] = useState(true)
-  const { selectedAssignmentId, setSelectedAssignmentId, assignmentVersion } = useAppStore()
+  const { selectedAssignmentId, setSelectedAssignmentId, assignmentVersion, bumpAssignmentVersion } = useAppStore()
   const { toast } = useToast()
 
   // Custom fields
@@ -76,6 +78,13 @@ export function WorkSubmission() {
   const [showMappingDialog, setShowMappingDialog] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState<Set<string>>(() => new Set())
+  const [batchDeleting, setBatchDeleting] = useState(false)
+
+  const firstSelectBatchIds = useMemo(
+    () => submissions.slice(0, SELECT_CAP).map(s => s.id),
+    [submissions]
+  )
 
   const fetchAssignments = useCallback(async () => {
     try {
@@ -107,7 +116,11 @@ export function WorkSubmission() {
 
   useEffect(() => { fetchAssignments() }, [fetchAssignments])
   useEffect(() => { fetchAssignments() }, [assignmentVersion])
-  useEffect(() => { if (selectedId) fetchSubmissions() }, [selectedId, fetchSubmissions])
+  useEffect(() => { if (selectedId) fetchSubmissions() }, [selectedId, assignmentVersion, fetchSubmissions])
+
+  useEffect(() => {
+    setSelectedSubmissionIds(new Set())
+  }, [selectedId])
 
   // Custom field management
   const handleAddField = () => {
@@ -316,12 +329,95 @@ export function WorkSubmission() {
       const res = await fetch(`/api/submissions/${id}`, { method: 'DELETE' })
       if (res.ok) {
         setSubmissions(prev => prev.filter(s => s.id !== id))
+        setSelectedSubmissionIds(prev => {
+          const n = new Set(prev)
+          n.delete(id)
+          return n
+        })
         toast({ title: '已删除' })
       }
     } catch {
       toast({ title: '删除失败', variant: 'destructive' })
     }
   }
+
+  const toggleSubmissionSelected = (id: string) => {
+    setSelectedSubmissionIds(prev => {
+      const n = new Set(prev)
+      if (n.has(id)) {
+        n.delete(id)
+        return n
+      }
+      if (n.size >= SELECT_CAP) {
+        toast({ title: '最多选择 100 条', description: '请先取消部分勾选后再选', variant: 'destructive' })
+        return prev
+      }
+      n.add(id)
+      return n
+    })
+  }
+
+  const toggleSelectFirstBatch = () => {
+    if (firstSelectBatchIds.length === 0) return
+    const allSelected =
+      firstSelectBatchIds.length > 0 &&
+      firstSelectBatchIds.every(id => selectedSubmissionIds.has(id))
+    if (allSelected) {
+      setSelectedSubmissionIds(prev => {
+        const n = new Set(prev)
+        for (const id of firstSelectBatchIds) n.delete(id)
+        return n
+      })
+    } else {
+      setSelectedSubmissionIds(new Set(firstSelectBatchIds))
+    }
+  }
+
+  const handleBatchDelete = async () => {
+    if (!selectedId) return
+    const ids = Array.from(selectedSubmissionIds)
+    if (ids.length === 0) return
+    if (!confirm(`确定删除选中的 ${ids.length} 份作业？`)) return
+    setBatchDeleting(true)
+    try {
+      const res = await fetch(`/api/assignments/${selectedId}/submissions`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      if (res.ok) {
+        const data = (await res.json()) as { deleted?: number }
+        const n = data.deleted ?? ids.length
+        toast({ title: '已删除', description: `已从数据库删除 ${n} 份` })
+        setSelectedSubmissionIds(new Set())
+        await fetchSubmissions()
+        bumpAssignmentVersion()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        toast({
+          title: '删除失败',
+          description: typeof err.error === 'string' ? err.error : '请重试',
+          variant: 'destructive',
+        })
+      }
+    } catch {
+      toast({ title: '删除失败', variant: 'destructive' })
+    } finally {
+      setBatchDeleting(false)
+    }
+  }
+
+  const allFirstBatchSelected =
+    firstSelectBatchIds.length > 0 &&
+    firstSelectBatchIds.every(id => selectedSubmissionIds.has(id))
+  const someFirstBatchSelected = firstSelectBatchIds.some(id =>
+    selectedSubmissionIds.has(id)
+  )
+  const headerCheckboxState: boolean | 'indeterminate' = allFirstBatchSelected
+    ? true
+    : someFirstBatchSelected
+      ? 'indeterminate'
+      : false
 
   const handleSelectAssignment = (id: string) => {
     setSelectedId(id)
@@ -581,20 +677,48 @@ export function WorkSubmission() {
           {/* Submissions Table */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <CardTitle className="text-lg">已提交作业</CardTitle>
-                  <CardDescription>共 {submissions.length} 份提交</CardDescription>
+                  <CardDescription>
+                    共 {submissions.length} 份提交
+                    {submissions.length > SELECT_CAP ? (
+                      <span className="text-gray-400"> · 表头全选为列表前 {SELECT_CAP} 条</span>
+                    ) : null}
+                  </CardDescription>
                 </div>
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-gray-400"></span>
-                    待批改 {submissions.filter(s => s.status === 'submitted').length}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    已批改 {submissions.filter(s => s.status === 'graded').length}
-                  </span>
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-gray-400"></span>
+                      待批改 {submissions.filter(s => s.status === 'submitted').length}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      已批改 {submissions.filter(s => s.status === 'graded').length}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                    disabled={selectedSubmissionIds.size === 0 || batchDeleting}
+                    onClick={handleBatchDelete}
+                  >
+                    {batchDeleting ? (
+                      <>
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        删除中…
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3 h-3 mr-1" />
+                        批量删除
+                        {selectedSubmissionIds.size > 0 ? ` (${selectedSubmissionIds.size})` : ''}
+                      </>
+                    )}
+                  </Button>
                 </div>
               </div>
             </CardHeader>
@@ -609,6 +733,13 @@ export function WorkSubmission() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-10 pr-0">
+                          <Checkbox
+                            aria-label="全选列表前一百条"
+                            checked={headerCheckboxState}
+                            onCheckedChange={() => toggleSelectFirstBatch()}
+                          />
+                        </TableHead>
                         <TableHead>姓名</TableHead>
                         <TableHead>学号</TableHead>
                         <TableHead>文件</TableHead>
@@ -621,6 +752,13 @@ export function WorkSubmission() {
                     <TableBody>
                       {submissions.map(s => (
                         <TableRow key={s.id}>
+                          <TableCell className="w-10 pr-0 align-middle">
+                            <Checkbox
+                              aria-label={`选择 ${s.studentName}`}
+                              checked={selectedSubmissionIds.has(s.id)}
+                              onCheckedChange={() => toggleSubmissionSelected(s.id)}
+                            />
+                          </TableCell>
                           <TableCell className="font-medium">{s.studentName}</TableCell>
                           <TableCell className="text-gray-400 text-sm">{s.studentId || '-'}</TableCell>
                           <TableCell>

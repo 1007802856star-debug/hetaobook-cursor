@@ -27,10 +27,8 @@ export function StatisticsAnalysis() {
     totalScore: number
     maxScore: number
     evaluation: string
-    strengths: string
-    weaknesses: string
     studentWork: { studentName: string; studentId: string }
-    scores: Array<{ score: number; comment: string; criteria: { criterion: string; maxScore: number } }>
+    scores: Array<{ score: number; criteria: { criterion: string; maxScore: number } }>
   }>>([])
   const [loading, setLoading] = useState(true)
   const { selectedAssignmentId, setSelectedAssignmentId, assignmentVersion } = useAppStore()
@@ -71,7 +69,7 @@ export function StatisticsAnalysis() {
 
   useEffect(() => { fetchAssignments() }, [fetchAssignments])
   useEffect(() => { fetchAssignments() }, [assignmentVersion])
-  useEffect(() => { if (selectedId) fetchData() }, [selectedId, fetchData])
+  useEffect(() => { if (selectedId) fetchData() }, [selectedId, assignmentVersion, fetchData])
 
   if (loading) {
     return <div className="animate-pulse space-y-4"><div className="h-10 bg-gray-200 rounded" /><div className="h-60 bg-gray-200 rounded" /></div>
@@ -243,16 +241,16 @@ export function StatisticsAnalysis() {
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5 text-amber-600" />
-                  常见问题
+                  维度短板提示
                 </CardTitle>
-                <CardDescription>从批改反馈中提取的共性问题</CardDescription>
+                <CardDescription>按班级各维度均分相对满分比例，从低到高列出需关注的维度</CardDescription>
               </CardHeader>
               <CardContent>
                 {stats.commonWeaknesses.length > 0 ? (
                   <div className="space-y-3">
                     {stats.commonWeaknesses.map((w, i) => (
                       <div key={i} className="flex items-start gap-3 p-3 bg-amber-50 rounded-lg border border-amber-100">
-                        <Badge variant="outline" className="shrink-0 text-amber-700 bg-amber-100">问题 {i + 1}</Badge>
+                        <Badge variant="outline" className="shrink-0 text-amber-700 bg-amber-100">维度 {i + 1}</Badge>
                         <p className="text-sm text-gray-700 whitespace-pre-wrap">{w}</p>
                       </div>
                     ))}

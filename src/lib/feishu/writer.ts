@@ -2,7 +2,19 @@ import { feishuRequest, getSpreadsheetToken } from '@/lib/feishu/client'
 
 type RowValue = string | number | boolean | null
 
-export type PushResultRow = {
+/** 0-based column index → Excel column label (0→A, 25→Z, 26→AA) */
+export function columnIndexToLabel(zeroBasedIndex: number): string {
+  let n = zeroBasedIndex + 1
+  let label = ''
+  while (n > 0) {
+    const rem = (n - 1) % 26
+    label = String.fromCharCode(65 + rem) + label
+    n = Math.floor((n - 1) / 26)
+  }
+  return label
+}
+
+export type PushWideRow = {
   studentName: string
   studentId: string
   submittedAt: string
@@ -10,11 +22,8 @@ export type PushResultRow = {
   totalScore: number
   maxScore: number
   evaluation: string
-  modifications: string
-  feedback: string
-  strengths: string
-  weaknesses: string
-  suggestions: string
+  /** criterion name → score for this row */
+  dimensionScores: Record<string, number | string>
 }
 
 function fmtDate(isoLike: string) {
@@ -27,79 +36,70 @@ function safeText(v: unknown) {
   return String(v ?? '').trim()
 }
 
-function normalizeModifications(raw: string) {
-  if (!raw) return ''
-  try {
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return safeText(raw)
-    return parsed
-      .map((item: any, i: number) => {
-        const dim = safeText(item?.dimension || item?.criterion || `建议${i + 1}`)
-        const issue = safeText(item?.issue)
-        const suggestion = safeText(item?.suggestion || item?.content)
-        return [dim, issue, suggestion].filter(Boolean).join(' | ')
-      })
-      .filter(Boolean)
-      .join('\n')
-  } catch {
-    return safeText(raw)
-  }
-}
-
 function rowsToGrid(rows: RowValue[][]) {
   return rows.map((r) => r.map((v) => (v === null ? '' : v)))
 }
 
-export function buildRowsFromResults(results: PushResultRow[], assignmentTitle: string): RowValue[][] {
-  const header: RowValue[] = [
+/**
+ * 宽表：固定列 + 按作业维度动态列（列名为维度名称，单元格为得分）+ 作业内容
+ */
+export function buildWideSheetRows(
+  assignmentTitle: string,
+  criteriaOrder: string[],
+  rows: PushWideRow[]
+): RowValue[][] {
+  const fixedHeader: RowValue[] = [
     '作业标题',
     '学生姓名',
     '学号',
     '提交时间',
     '总分',
     '满分',
-    '总体评价',
-    '优点',
-    '不足',
-    '修改建议',
-    '补充反馈',
-    '建议提升',
-    '作业内容',
+    '综合评价',
   ]
+  const header: RowValue[] = [...fixedHeader, ...criteriaOrder.map((c) => safeText(c)), '作业内容']
 
-  const dataRows: RowValue[][] = results.map((r) => [
-    assignmentTitle,
-    safeText(r.studentName),
-    safeText(r.studentId),
-    fmtDate(r.submittedAt),
-    Number(r.totalScore || 0),
-    Number(r.maxScore || 0),
-    safeText(r.evaluation),
-    safeText(r.strengths),
-    safeText(r.weaknesses),
-    normalizeModifications(r.modifications),
-    safeText(r.feedback),
-    safeText(r.suggestions),
-    safeText(r.content),
-  ])
+  const dataRows: RowValue[][] = rows.map((r) => {
+    const dimCells = criteriaOrder.map((name) => {
+      const v = r.dimensionScores[name]
+      if (v === '' || v === undefined || v === null) return ''
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) ? n : safeText(v)
+    })
+    return [
+      assignmentTitle,
+      safeText(r.studentName),
+      safeText(r.studentId),
+      fmtDate(r.submittedAt),
+      Number(r.totalScore || 0),
+      Number(r.maxScore || 0),
+      safeText(r.evaluation),
+      ...dimCells,
+      safeText(r.content),
+    ]
+  })
 
   return [header, ...dataRows]
 }
 
-export async function clearSheetData(sheet: { sheetId: string }, clearRows = 2000) {
+export async function clearSheetData(
+  sheet: { sheetId: string },
+  clearRows = 2000,
+  columnCount = 52
+) {
   const spreadsheetToken = getSpreadsheetToken()
   if (!spreadsheetToken) throw new Error('Missing FEISHU_SPREADSHEET_TOKEN')
 
   const rows = Math.max(2, clearRows)
-  const emptyRows = Array.from({ length: rows }, () => Array.from({ length: 26 }, () => ''))
+  const cols = Math.min(Math.max(columnCount, 8), 100)
+  const emptyRows = Array.from({ length: rows }, () => Array.from({ length: cols }, () => ''))
+  const lastCol = columnIndexToLabel(cols - 1)
 
-  // Some Feishu tenants do not expose values_batch_clear. Use a plain values overwrite
-  // with empty cells, which is compatible with the same write API we already use.
   await feishuRequest(`/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values`, {
     method: 'PUT',
     body: JSON.stringify({
       valueRange: {
-        range: `${sheet.sheetId}!A1:Z${rows}`,
+        range: `${sheet.sheetId}!A1:${lastCol}${rows}`,
         values: emptyRows,
       },
     }),
@@ -114,21 +114,21 @@ export async function writeSheetData(
   const spreadsheetToken = getSpreadsheetToken()
   if (!spreadsheetToken) throw new Error('Missing FEISHU_SPREADSHEET_TOKEN')
 
+  const colCount = rows[0]?.length ?? 1
+  const lastCol = columnIndexToLabel(Math.max(colCount - 1, 0))
   const lastRow = Math.max(1, rows.length)
+
   await feishuRequest(`/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values`, {
     method: 'PUT',
     body: JSON.stringify({
       valueRange: {
-        range: `${sheet.sheetId}!A1:Z${lastRow}`,
+        range: `${sheet.sheetId}!A1:${lastCol}${lastRow}`,
         values: rowsToGrid(rows),
       },
     }),
   })
 }
 
-// Keep this API to be compatible with your existing route logic.
-// Styling is optional: if this endpoint changes or fails, push should still succeed.
 export async function setSheetStyle(_sheet: { sheetId: string }, _rows: number) {
   return { success: true }
 }
-

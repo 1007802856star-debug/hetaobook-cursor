@@ -49,11 +49,6 @@ export interface GradingResultItem {
   totalScore: number;
   maxScore: number;
   evaluation: string;
-  modifications: string;
-  feedback: string;
-  strengths: string;
-  weaknesses: string;
-  suggestions: string;
   gradedAt: string;
   criteriaScores: CriteriaScoreItem[];
 }
@@ -63,7 +58,6 @@ export interface CriteriaScoreItem {
   criteriaId: string;
   studentWorkId: string;
   score: number;
-  comment: string;
   criterionName?: string;
   maxScore?: number;
 }

@@ -5,8 +5,8 @@ import {
   writeSheetData,
   clearSheetData,
   setSheetStyle,
-  buildRowsFromResults,
-  type PushResultRow,
+  buildWideSheetRows,
+  type PushWideRow,
 } from '@/lib/feishu/writer'
 import { grantAdminPermission } from '@/lib/feishu/permission'
 
@@ -30,9 +30,18 @@ export async function POST(request: NextRequest) {
     const assignment = await db.assignment.findUnique({
       where: { id: assignmentId },
       include: {
+        criteria: { orderBy: { order: 'asc' } },
         submissions: {
           include: {
-            result: true,
+            result: {
+              include: {
+                scores: {
+                  include: {
+                    criteria: { select: { id: true, criterion: true } },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -53,24 +62,28 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Compatibility note:
-    // old cloud version used batchTimestamp; local version uses submittedAt/createdAt.
-    const results: PushResultRow[] = gradedSubmissions.map((s) => ({
-      studentName: s.studentName,
-      studentId: s.studentId,
-      submittedAt: s.submittedAt?.toISOString?.() || s.createdAt?.toISOString?.() || '',
-      content: s.content || '',
-      totalScore: s.result?.totalScore || 0,
-      maxScore: s.result?.maxScore || 100,
-      evaluation: s.result?.evaluation || '',
-      modifications: s.result?.modifications || '',
-      feedback: s.result?.feedback || '',
-      strengths: s.result?.strengths || '',
-      weaknesses: s.result?.weaknesses || '',
-      suggestions: s.result?.suggestions || '',
-    }))
+    const criteriaOrder = assignment.criteria.map((c) => c.criterion.trim()).filter(Boolean)
 
-    const rows = buildRowsFromResults(results, assignment.title)
+    const results: PushWideRow[] = gradedSubmissions.map((s) => {
+      const dimensionScores: Record<string, number | string> = {}
+      for (const sc of s.result?.scores ?? []) {
+        const name = sc.criteria?.criterion?.trim()
+        if (name) dimensionScores[name] = sc.score
+      }
+      return {
+        studentName: s.studentName,
+        studentId: s.studentId,
+        submittedAt: s.submittedAt?.toISOString?.() || s.createdAt?.toISOString?.() || '',
+        content: s.content || '',
+        totalScore: s.result?.totalScore || 0,
+        maxScore: s.result?.maxScore || 100,
+        evaluation: s.result?.evaluation || '',
+        dimensionScores,
+      }
+    })
+
+    const rows = buildWideSheetRows(assignment.title, criteriaOrder, results)
+    const colCount = rows[0]?.length ?? 12
     const sheetTitle = assignment.title
     const { sheet, isNew } = await ensureSheet(sheetTitle)
 
@@ -78,7 +91,7 @@ export async function POST(request: NextRequest) {
       await writeSheetData(sheet, rows, true)
       await setSheetStyle(sheet, rows.length + 1)
     } else {
-      await clearSheetData(sheet, rows.length + 200)
+      await clearSheetData(sheet, rows.length + 200, colCount)
       await writeSheetData(sheet, rows, true)
       await setSheetStyle(sheet, rows.length + 1)
     }
